@@ -24,7 +24,9 @@
       "Skill(update-config)",
       "Bash(vercel ls:*)",
       "Bash(vercel env:*)",
-      "Bash(vercel domains:*)"
+      "Bash(vercel domains:*)",
+      "mcp__plugin_vercel-plugin_vercel__get_deployment",
+      "Bash(npm run:*)"
     ]
   }
 }
