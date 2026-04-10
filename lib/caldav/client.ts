@@ -97,6 +97,15 @@ async function discoverHomeUrl(): Promise<string> {
   return _homeUrl;
 }
 
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -130,7 +139,9 @@ export async function listCalendars(): Promise<DAVCalendar[]> {
     if (!block.includes("VEVENT")) continue;
 
     const href = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/)?.[1]?.trim();
-    const name = block.match(/<[A-Za-z0-9]*:?displayname[^>]*>([^<]*)<\/[A-Za-z0-9]*:?displayname>/)?.[1]?.trim() ?? "";
+    const name = decodeEntities(
+      block.match(/<[A-Za-z0-9]*:?displayname[^>]*>([^<]*)<\/[A-Za-z0-9]*:?displayname>/)?.[1]?.trim() ?? ""
+    );
 
     if (href) calendars.push({ url: toAbsolute(href, homeUrl), displayName: name });
   }
