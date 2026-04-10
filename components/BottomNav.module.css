@@ -1,0 +1,35 @@
+.nav {
+  display: flex;
+  border-top: 1px solid #1a1a1a;
+  background: #000;
+  padding-bottom: env(safe-area-inset-bottom);
+  flex-shrink: 0;
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 0;
+  text-decoration: none;
+  color: #555;
+  gap: 0.2rem;
+  transition: color 0.15s;
+}
+
+.tab.active {
+  color: #fff;
+}
+
+.icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import BottomNav from "@/components/BottomNav";
 import styles from "./chat.module.css";
 
 interface Message {
@@ -241,6 +242,7 @@ export default function ChatPage() {
           ↑
         </button>
       </div>
+      <BottomNav />
     </div>
   );
 }

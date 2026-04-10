@@ -7,6 +7,7 @@
 
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
+import { parse as parseYaml } from "yaml";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { Redis } from "@upstash/redis";
 
@@ -233,6 +234,50 @@ async function importVault() {
 }
 
 // ---------------------------------------------------------------------------
+// Seed structured recipe data into Redis (for the /recipes page)
+// ---------------------------------------------------------------------------
+async function seedRecipes() {
+  console.log("\n→ Seeding structured recipes into Redis...");
+
+  const recipesDir = join(VAULT, "recipes");
+  const files = readdirSync(recipesDir).filter((f) => f.endsWith(".md"));
+
+  const recipes = [];
+
+  for (const file of files) {
+    const raw = read(join(recipesDir, file));
+    if (!raw.startsWith("---")) continue;
+
+    const end = raw.indexOf("\n---\n", 4);
+    if (end < 0) continue;
+
+    const yamlStr = raw.slice(4, end);
+    const body = raw.slice(end + 5).trim();
+
+    let meta;
+    try {
+      meta = parseYaml(yamlStr);
+    } catch {
+      continue;
+    }
+
+    recipes.push({
+      slug: meta.slug ?? file.replace(".md", ""),
+      name: meta.name ?? file.replace(/-/g, " ").replace(".md", ""),
+      cuisine: meta.cuisine ?? "",
+      source: meta.source ?? "",
+      url: meta.url ?? null,
+      servings: meta.servings ?? null,
+      totalTime: meta.total_time ?? null,
+      content: body,
+    });
+  }
+
+  await redis.set("data:recipes", recipes);
+  console.log(`  ${recipes.length} recipes stored in Redis.`);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
@@ -243,6 +288,7 @@ async function main() {
 
   await seedProfile();
   await importVault();
+  await seedRecipes();
 
   console.log("\n✓ Import complete.");
 }

@@ -1,0 +1,252 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 680px;
+  margin: 0 auto;
+  background: #000;
+}
+
+.header {
+  padding: 1rem 1rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.search {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 0.6rem 1rem;
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.search::placeholder {
+  color: #555;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
+}
+
+.pill {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #888;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.pill.activePill {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 1rem 1rem;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.count {
+  font-size: 0.8rem;
+  color: #555;
+  margin-bottom: 0.75rem;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  background: #111;
+  border-radius: 12px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+
+.card:active {
+  border-color: #333;
+}
+
+.cardName {
+  font-size: 0.95rem;
+  color: #e8e8e8;
+  flex: 1;
+  margin-right: 0.75rem;
+}
+
+.badge {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #1e1e1e;
+  color: #888;
+  border: 1px solid #2a2a2a;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.empty {
+  text-align: center;
+  color: #555;
+  font-size: 0.9rem;
+  padding: 3rem 0;
+}
+
+/* Detail overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  background: #111;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheetHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.25rem 1.25rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.sheetTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  flex: 1;
+  margin-right: 1rem;
+  line-height: 1.3;
+}
+
+.sheetMeta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0 1.25rem 0.75rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+.closeBtn {
+  background: #2a2a2a;
+  border: none;
+  color: #888;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sheetBody {
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  flex: 1;
+  scrollbar-width: none;
+  color: #e8e8e8;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.sheetBody::-webkit-scrollbar {
+  display: none;
+}
+
+.sheetBody h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 1rem 0 0.5rem;
+}
+
+.sheetBody h2:first-child {
+  margin-top: 0;
+}
+
+.sheetBody ul,
+.sheetBody ol {
+  padding-left: 1.3em;
+  margin: 0.25em 0;
+}
+
+.sheetBody li {
+  margin: 0.2em 0;
+}
+
+.sheetBody p {
+  margin: 0 0 0.5em;
+}
+
+.sourceLink {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: #888;
+  text-decoration: none;
+  border: 1px solid #2a2a2a;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+}
+
+.sourceLink:hover {
+  color: #aaa;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #555;
+  font-size: 0.9rem;
+}
