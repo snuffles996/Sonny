@@ -19,6 +19,7 @@ export default function RecipesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [cuisine, setCuisine] = useState(ALL);
+  const [source, setSource] = useState(ALL);
   const [selected, setSelected] = useState<Recipe | null>(null);
 
   // Auth check
@@ -56,15 +57,23 @@ export default function RecipesPage() {
     return [ALL, ...Array.from(set).sort()];
   }, [recipes]);
 
+  const sources = useMemo(() => {
+    const set = new Set(recipes.map((r) => r.source).filter(Boolean));
+    return [ALL, ...Array.from(set).sort()];
+  }, [recipes]);
+
   const filtered = useMemo(() => {
+    const q = search.toLowerCase();
     return recipes.filter((r) => {
       const matchesCuisine = cuisine === ALL || r.cuisine === cuisine;
+      const matchesSource = source === ALL || r.source === source;
       const matchesSearch =
-        !search ||
-        r.name.toLowerCase().includes(search.toLowerCase());
-      return matchesCuisine && matchesSearch;
+        !q ||
+        r.name.toLowerCase().includes(q) ||
+        r.content.toLowerCase().includes(q);
+      return matchesCuisine && matchesSource && matchesSearch;
     });
-  }, [recipes, cuisine, search]);
+  }, [recipes, cuisine, source, search]);
 
   if (loading) {
     return (
@@ -82,7 +91,7 @@ export default function RecipesPage() {
         <input
           className={styles.search}
           type="search"
-          placeholder="Search recipes…"
+          placeholder="Search by name or ingredient…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -96,6 +105,18 @@ export default function RecipesPage() {
             onClick={() => setCuisine(c)}
           >
             {c}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.filters}>
+        {sources.map((s) => (
+          <button
+            key={s}
+            className={`${styles.pill} ${source === s ? styles.activePill : ""}`}
+            onClick={() => setSource(s)}
+          >
+            {s}
           </button>
         ))}
       </div>
@@ -132,6 +153,9 @@ export default function RecipesPage() {
               {selected.servings && (
                 <span className={styles.badge}>Serves {selected.servings}</span>
               )}
+              {selected.lastMade && (
+                <span className={styles.badge}>Made {selected.lastMade}</span>
+              )}
               {selected.url && (
                 <a
                   href={selected.url}
@@ -145,6 +169,11 @@ export default function RecipesPage() {
               )}
             </div>
             <div className={styles.sheetBody}>
+              {selected.notes && (
+                <div className={styles.sheetNotes}>
+                  {selected.notes}
+                </div>
+              )}
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {selected.content}
               </ReactMarkdown>

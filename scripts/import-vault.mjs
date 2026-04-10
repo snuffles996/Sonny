@@ -236,8 +236,45 @@ async function importVault() {
 // ---------------------------------------------------------------------------
 // Seed structured recipe data into Redis (for the /recipes page)
 // ---------------------------------------------------------------------------
+
+function parseRecipeListTable(text) {
+  // Returns Map<normalizedName, { addedDate, lastMade, notes }>
+  const map = new Map();
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) continue;
+    const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
+    if (cells.length < 6) continue;
+    const [name, , , added, lastMade, notes] = cells;
+    // Skip header row and separator rows
+    if (!name || name === "Dish name" || /^[-\s]+$/.test(name)) continue;
+    map.set(name.toLowerCase(), {
+      addedDate: added || null,
+      lastMade: lastMade || null,
+      notes: notes || null,
+    });
+  }
+  return map;
+}
+
+function fuzzyLookup(recipeName, tableMap) {
+  const lower = recipeName.toLowerCase();
+  // Exact match first
+  if (tableMap.has(lower)) return tableMap.get(lower);
+  // Table name is a prefix of the full recipe name (most common case)
+  for (const [key, val] of tableMap) {
+    if (lower.startsWith(key)) return val;
+  }
+  return null;
+}
+
 async function seedRecipes() {
   console.log("\n→ Seeding structured recipes into Redis...");
+
+  // Parse recipelist.md table for addedDate, lastMade, notes
+  const recipeListText = read(join(VAULT, "lists/recipelist.md"));
+  const listMeta = parseRecipeListTable(recipeListText);
+  console.log(`  Parsed ${listMeta.size} entries from recipelist.md`);
 
   const recipesDir = join(VAULT, "recipes");
   const files = readdirSync(recipesDir).filter((f) => f.endsWith(".md"));
@@ -261,14 +298,20 @@ async function seedRecipes() {
       continue;
     }
 
+    const name = meta.name ?? file.replace(/-/g, " ").replace(".md", "");
+    const extra = fuzzyLookup(name, listMeta) ?? {};
+
     recipes.push({
       slug: meta.slug ?? file.replace(".md", ""),
-      name: meta.name ?? file.replace(/-/g, " ").replace(".md", ""),
+      name,
       cuisine: meta.cuisine ?? "",
       source: meta.source ?? "",
       url: meta.url ?? null,
       servings: meta.servings ?? null,
       totalTime: meta.total_time ?? null,
+      addedDate: extra.addedDate ?? null,
+      lastMade: extra.lastMade ?? null,
+      notes: extra.notes ?? null,
       content: body,
     });
   }
