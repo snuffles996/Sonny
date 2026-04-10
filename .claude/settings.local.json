@@ -26,7 +26,11 @@
       "Bash(vercel env:*)",
       "Bash(vercel domains:*)",
       "mcp__plugin_vercel-plugin_vercel__get_deployment",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(curl -s -X POST https://sonny-phi.vercel.app/api/chat -H \"Authorization: Bearer 6937af56dcd4eefc5df311d639f3f357d6a5d42defdfd270d46196b6af54bf7c\" -H \"Content-Type: application/json\" -d '{\"message\": \"what is the capital of France?\"}')",
+      "Bash(jq)",
+      "Bash(curl -s -X POST https://sonny-phi.vercel.app/api/chat -H \"Authorization: Bearer 6937af56dcd4eefc5df311d639f3f357d6a5d42defdfd270d46196b6af54bf7c\" -H \"Content-Type: application/json\" -d '{\"message\": \"remember that my favourite restaurant is Bestia in LA\"}')",
+      "Bash(curl -s -X POST https://sonny-phi.vercel.app/api/chat -H \"Authorization: Bearer 6937af56dcd4eefc5df311d639f3f357d6a5d42defdfd270d46196b6af54bf7c\" -H \"Content-Type: application/json\" -d '{\"message\": \"note: Bestia in LA is an excellent Italian restaurant, great pasta and cocktails\"}')"
     ]
   }
 }
