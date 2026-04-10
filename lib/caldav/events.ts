@@ -4,6 +4,13 @@ import { listCalendars, fetchCalendarIcals, putCalendarObject } from "./client";
 // If users diverge on timezone this should come from the profile.
 export const USER_TIMEZONE = "America/Los_Angeles";
 
+// Calendars Sonny reads events from (comma-separated display names)
+const READ_CALENDAR_NAMES = (process.env.CALDAV_READ_CALENDARS ?? "Kevin's Calendar,Runna")
+  .split(",").map((s) => s.trim().toLowerCase());
+
+// Calendar Sonny writes new events to
+const WRITE_CALENDAR_NAME = (process.env.CALDAV_WRITE_CALENDAR ?? "Kevin's Calendar").toLowerCase();
+
 // ---------------------------------------------------------------------------
 // iCal parsing helpers
 // ---------------------------------------------------------------------------
@@ -116,8 +123,12 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
   const startOfToday = localToUTC(`${todayDateStr}T00:00:00`, USER_TIMEZONE);
   const end = new Date(startOfToday.getTime() + days * 24 * 60 * 60 * 1000);
 
+  const readCalendars = calendars.filter((c) =>
+    READ_CALENDAR_NAMES.includes(c.displayName.toLowerCase())
+  );
+
   const allIcals = await Promise.all(
-    calendars.map((cal) => fetchCalendarIcals(cal.url, startOfToday, end).catch(() => []))
+    readCalendars.map((cal) => fetchCalendarIcals(cal.url, startOfToday, end).catch(() => []))
   );
 
   interface Event {
@@ -193,11 +204,10 @@ export async function createEvent(details: NewEventDetails): Promise<void> {
   const calendars = await listCalendars();
   if (calendars.length === 0) throw new Error("No calendars available");
 
-  // Prefer a calendar named Home, Personal, or Calendar; fall back to first
+  // Write to the configured calendar name, fall back to first available
   const preferred =
-    calendars.find((c) =>
-      ["home", "personal", "calendar"].includes(c.displayName.toLowerCase())
-    ) ?? calendars[0];
+    calendars.find((c) => c.displayName.toLowerCase() === WRITE_CALENDAR_NAME) ??
+    calendars[0];
 
   const uid = `${crypto.randomUUID()}@sonny`;
   const stamp =
