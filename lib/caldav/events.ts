@@ -1,4 +1,4 @@
-import { getCalDAVClient } from "./client";
+import { listCalendars, fetchCalendarIcals, putCalendarObject } from "./client";
 
 // Kevin: San Diego. Kylie shares the same timezone.
 // If users diverge on timezone this should come from the profile.
@@ -103,22 +103,14 @@ function parseICalDate(prop: PropResult): ParsedDate {
 // ---------------------------------------------------------------------------
 
 export async function getUpcomingEvents(days = 14): Promise<string> {
-  const client = await getCalDAVClient();
-  const calendars = await client.fetchCalendars();
+  const calendars = await listCalendars();
   if (calendars.length === 0) return "No calendars found.";
 
   const now = new Date();
   const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-  const allObjects = await Promise.all(
-    calendars.map((cal) =>
-      client
-        .fetchCalendarObjects({
-          calendar: cal,
-          timeRange: { start: now.toISOString(), end: end.toISOString() },
-        })
-        .catch(() => [])
-    )
+  const allIcals = await Promise.all(
+    calendars.map((cal) => fetchCalendarIcals(cal.url, now, end).catch(() => []))
   );
 
   interface Event {
@@ -133,10 +125,9 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
   const seen = new Set<string>();
   const events: Event[] = [];
 
-  for (const objects of allObjects) {
-    for (const obj of objects) {
-      if (!obj.data) continue;
-      const raw = unfold(typeof obj.data === "string" ? obj.data : String(obj.data));
+  for (const icals of allIcals) {
+    for (const ical of icals) {
+      const raw = unfold(ical);
       for (const vevent of getVEvents(raw)) {
         const status = getProp(vevent, "STATUS");
         if (status?.value === "CANCELLED") continue;
@@ -187,17 +178,14 @@ export interface NewEventDetails {
 }
 
 export async function createEvent(details: NewEventDetails): Promise<void> {
-  const client = await getCalDAVClient();
-  const calendars = await client.fetchCalendars();
+  const calendars = await listCalendars();
   if (calendars.length === 0) throw new Error("No calendars available");
 
   // Prefer a calendar named Home, Personal, or Calendar; fall back to first
   const preferred =
-    calendars.find((c) => {
-      const name =
-        typeof c.displayName === "string" ? c.displayName.toLowerCase() : "";
-      return ["home", "personal", "calendar"].includes(name);
-    }) ?? calendars[0];
+    calendars.find((c) =>
+      ["home", "personal", "calendar"].includes(c.displayName.toLowerCase())
+    ) ?? calendars[0];
 
   const uid = `${crypto.randomUUID()}@sonny`;
   const stamp =
@@ -226,9 +214,5 @@ export async function createEvent(details: NewEventDetails): Promise<void> {
   if (details.notes) lines.push(`DESCRIPTION:${details.notes}`);
   lines.push("END:VEVENT", "END:VCALENDAR");
 
-  await client.createCalendarObject({
-    calendar: preferred,
-    iCalString: lines.join("\r\n"),
-    filename: `${uid}.ics`,
-  });
+  await putCalendarObject(preferred.url, uid, lines.join("\r\n"));
 }
