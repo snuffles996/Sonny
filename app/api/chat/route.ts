@@ -9,6 +9,8 @@ import { classifyIntent } from "@/lib/anthropic/classify";
 import { generateResponse } from "@/lib/anthropic/respond";
 import { getRecentTurns, appendTurn } from "@/lib/session/kv";
 import { saveNote, searchNotes } from "@/lib/pinecone/records";
+import { saveProfile } from "@/lib/profile/store";
+import { extractProfileUpdate } from "@/lib/anthropic/profile";
 
 export async function POST(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -50,7 +52,13 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "profile_update": {
-      reply = "Profile updates coming soon.";
+      const updates = await extractProfileUpdate(message, profile);
+      if (Object.keys(updates).length === 0) {
+        reply = "I wasn't sure what to update — could you be more specific?";
+      } else {
+        await saveProfile(userId, updates);
+        reply = "Got it, your profile has been updated.";
+      }
       break;
     }
     default: {
