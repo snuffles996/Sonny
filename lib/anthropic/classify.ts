@@ -5,7 +5,8 @@ export type Intent =
   | "query"
   | "calendar_read"
   | "calendar_write"
-  | "profile_update";
+  | "profile_update"
+  | "recipe_add";
 
 const INTENT_DESCRIPTIONS = [
   "save_note: user wants to save, remember, or log something",
@@ -13,6 +14,7 @@ const INTENT_DESCRIPTIONS = [
   "calendar_read: user wants to see upcoming events or check their schedule",
   "calendar_write: user wants to add, change, or remove a calendar event",
   "profile_update: user wants to update their personal preferences or profile info",
+  "recipe_add: user wants to add or save a recipe, often by providing a URL or link",
 ].join("\n");
 
 export async function classifyIntent(message: string): Promise<Intent> {
@@ -38,6 +40,7 @@ export async function classifyIntent(message: string): Promise<Intent> {
                 "calendar_read",
                 "calendar_write",
                 "profile_update",
+                "recipe_add",
               ],
             },
           },

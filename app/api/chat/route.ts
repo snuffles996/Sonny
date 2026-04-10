@@ -14,6 +14,8 @@ import { extractProfileUpdate } from "@/lib/anthropic/profile";
 import { getUpcomingEvents, createEvent } from "@/lib/caldav/events";
 import { extractEventDetails } from "@/lib/anthropic/calendar";
 import { isCalDAVConfigured } from "@/lib/caldav/client";
+import { extractRecipeFromUrl, extractUrlFromMessage } from "@/lib/recipes/extract";
+import { addRecipe } from "@/lib/recipes/store";
 
 export async function POST(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -79,6 +81,21 @@ export async function POST(req: NextRequest) {
       } else {
         await saveProfile(userId, updates);
         reply = "Got it, your profile has been updated.";
+      }
+      break;
+    }
+    case "recipe_add": {
+      const url = extractUrlFromMessage(message);
+      if (!url) {
+        reply = "I didn't find a URL in your message — paste the recipe link and I'll add it.";
+      } else {
+        const recipe = await extractRecipeFromUrl(url);
+        if (!recipe) {
+          reply = "I wasn't able to fetch that recipe — the site may be blocking requests. You can try a different link.";
+        } else {
+          await addRecipe(recipe);
+          reply = `Added **${recipe.name}** to your recipes.${recipe.cuisine ? ` (${recipe.cuisine})` : ""}`;
+        }
       }
       break;
     }
