@@ -11,6 +11,22 @@ const READ_CALENDAR_NAMES = (process.env.CALDAV_READ_CALENDARS ?? "Kevin's Calen
 // Calendar Sonny writes new events to
 const WRITE_CALENDAR_NAME = (process.env.CALDAV_WRITE_CALENDAR ?? "Kevin's Calendar").toLowerCase();
 
+// Direct ICS subscription URLs (for calendars like Runna that aren't native CalDAV collections).
+// Format: "Name=https://..." comma-separated. Name is used only for display.
+// e.g. ICS_SUBSCRIPTIONS="Runna=https://cal.runna.com/abc123.ics"
+const ICS_SUBSCRIPTIONS: { name: string; url: string }[] = (
+  process.env.ICS_SUBSCRIPTIONS ?? ""
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((entry) => {
+    const eq = entry.indexOf("=");
+    return eq > 0
+      ? { name: entry.slice(0, eq).trim(), url: entry.slice(eq + 1).trim() }
+      : { name: "Subscription", url: entry };
+  });
+
 // ---------------------------------------------------------------------------
 // iCal parsing helpers
 // ---------------------------------------------------------------------------
@@ -107,14 +123,36 @@ function parseICalDate(prop: PropResult): ParsedDate {
   return { date, allDay: false, label };
 }
 
+// Fetch a full ICS subscription URL and return VEVENT blocks that overlap [start, end]
+async function fetchSubscriptionIcals(url: string, start: Date, end: Date): Promise<string[]> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const raw = unfold(text);
+    const vevents = getVEvents(raw);
+
+    // Filter to events whose DTSTART falls within [start, end)
+    return vevents.filter((ve) => {
+      const dtstart = getProp(ve, "DTSTART");
+      if (!dtstart) return false;
+      try {
+        const { date } = parseICalDate(dtstart);
+        return date >= start && date < end;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 export async function getUpcomingEvents(days = 14): Promise<string> {
-  const calendars = await listCalendars();
-  if (calendars.length === 0) return "No calendars found.";
-
   const now = new Date();
 
   // Start from midnight of today in the user's timezone, not the current UTC instant.
@@ -123,12 +161,26 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
   const startOfToday = localToUTC(`${todayDateStr}T00:00:00`, USER_TIMEZONE);
   const end = new Date(startOfToday.getTime() + days * 24 * 60 * 60 * 1000);
 
+  // CalDAV calendars + direct ICS subscriptions in parallel
+  const [calendars, ...subscriptionEventGroups] = await Promise.all([
+    listCalendars().catch(() => [] as Awaited<ReturnType<typeof listCalendars>>),
+    ...ICS_SUBSCRIPTIONS.map((sub) => fetchSubscriptionIcals(sub.url, startOfToday, end)),
+  ]);
+
   const readCalendars = calendars.filter((c) =>
     READ_CALENDAR_NAMES.includes(c.displayName.toLowerCase())
   );
 
   const allIcals = await Promise.all(
     readCalendars.map((cal) => fetchCalendarIcals(cal.url, startOfToday, end).catch(() => []))
+  );
+
+  // Each subscription returns pre-filtered VEVENT strings; wrap them as synthetic ICS so
+  // the same parsing loop handles them without duplication.
+  const subscriptionIcals: string[][] = subscriptionEventGroups.map((vevents) =>
+    vevents.map(
+      (ve) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${ve}\r\nEND:VCALENDAR`
+    )
   );
 
   interface Event {
@@ -143,7 +195,7 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
   const seen = new Set<string>();
   const events: Event[] = [];
 
-  for (const icals of allIcals) {
+  for (const icals of [...allIcals, ...subscriptionIcals]) {
     for (const ical of icals) {
       const raw = unfold(ical);
       for (const vevent of getVEvents(raw)) {
