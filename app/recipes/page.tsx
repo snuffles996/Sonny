@@ -62,16 +62,23 @@ export default function RecipesPage() {
     return [ALL, ...Array.from(set).sort()];
   }, [recipes]);
 
+  // Parse query into tokens: "quoted phrase" stays whole, bare words split individually.
+  // All tokens must match (AND logic).
+  function matchesQuery(recipe: Recipe, query: string): boolean {
+    if (!query.trim()) return true;
+    const haystack = `${recipe.name} ${recipe.content}`.toLowerCase();
+    const tokens: string[] = [];
+    const re = /"([^"]+)"|(\S+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(query)) !== null) tokens.push((m[1] ?? m[2]).toLowerCase());
+    return tokens.every((t) => haystack.includes(t));
+  }
+
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
     return recipes.filter((r) => {
       const matchesCuisine = cuisine === ALL || r.cuisine === cuisine;
       const matchesSource = source === ALL || r.source === source;
-      const matchesSearch =
-        !q ||
-        r.name.toLowerCase().includes(q) ||
-        r.content.toLowerCase().includes(q);
-      return matchesCuisine && matchesSource && matchesSearch;
+      return matchesCuisine && matchesSource && matchesQuery(r, search);
     });
   }, [recipes, cuisine, source, search]);
 
