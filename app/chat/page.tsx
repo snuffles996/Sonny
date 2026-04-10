@@ -11,6 +11,21 @@ interface Message {
 }
 
 const TOKEN_KEY = "sonny_token";
+const VISITED_KEY = "sonny_visited";
+
+const FIRST_VISIT_GREETING = `Hey, I'm Sonny — your personal AI.
+
+Here's what I can do:
+
+- **Remember things** — *"Note that I want to try Nobu in Malibu"*
+- **Search your memory** — *"What restaurants have I saved?"*
+- **Calendar** — *"What's on my schedule this week?"* or *"Add a dentist appointment Thursday at 2pm"*
+- **Recipes** — *"What can I make with ground beef?"*
+- **Update your profile** — *"I'm vegetarian"* or *"I work from home on Fridays"*
+
+What would you like to start with?`;
+
+const REGULAR_GREETING = `What's on your mind?`;
 
 export default function ChatPage() {
   const [token, setToken] = useState<string | null>(null);
@@ -20,6 +35,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isFirstVisit, setIsFirstVisit] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -27,6 +43,14 @@ export default function ChatPage() {
     const stored = localStorage.getItem(TOKEN_KEY);
     if (stored) setToken(stored);
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!localStorage.getItem(VISITED_KEY)) {
+      setIsFirstVisit(true);
+      localStorage.setItem(VISITED_KEY, "1");
+    }
+  }, [token]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -164,7 +188,11 @@ export default function ChatPage() {
     <div className={styles.container}>
       <div className={styles.messages}>
         {messages.length === 0 && (
-          <p className={styles.emptyState}>What&apos;s on your mind?</p>
+          <div className={`${styles.bubble} ${styles.assistantBubble}`}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {isFirstVisit ? FIRST_VISIT_GREETING : REGULAR_GREETING}
+            </ReactMarkdown>
+          </div>
         )}
         {messages.map((msg, i) => (
           <div
