@@ -3,21 +3,45 @@
 const CALDAV_BASE = "https://caldav.icloud.com";
 
 function authHeader(): string {
-  const creds = `${process.env.CALDAV_USERNAME}:${process.env.CALDAV_PASSWORD}`;
-  return `Basic ${Buffer.from(creds).toString("base64")}`;
+  // trim() guards against accidental whitespace in env var values
+  const user = (process.env.CALDAV_USERNAME ?? "").trim();
+  const pass = (process.env.CALDAV_PASSWORD ?? "").trim();
+  return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
+}
+
+// fetch() strips Authorization on cross-origin redirects (e.g. caldav.icloud.com →
+// p12-caldav.icloud.com), causing a 401. Follow redirects manually to re-attach auth.
+async function calFetch(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string
+): Promise<Response> {
+  let current = url;
+  for (let i = 0; i < 5; i++) {
+    const res = await fetch(current, {
+      method,
+      headers: { ...headers, Authorization: authHeader() },
+      body,
+      redirect: "manual",
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc) throw new Error(`Redirect with no Location header from ${current}`);
+      current = loc.startsWith("http") ? loc : new URL(loc, current).href;
+      continue;
+    }
+    return res;
+  }
+  throw new Error("Too many redirects");
 }
 
 async function propfind(url: string, body: string, depth = "0"): Promise<string> {
-  const res = await fetch(url, {
-    method: "PROPFIND",
-    headers: {
-      Authorization: authHeader(),
-      Depth: depth,
-      "Content-Type": "application/xml; charset=utf-8",
-      Accept: "application/xml",
-    },
-    body,
-  });
+  const res = await calFetch(url, "PROPFIND", {
+    Depth: depth,
+    "Content-Type": "application/xml; charset=utf-8",
+    Accept: "application/xml",
+  }, body);
   // 207 Multi-Status is the expected success code for PROPFIND
   if (res.status !== 207 && !res.ok) {
     throw new Error(`PROPFIND ${url} → ${res.status}`);
@@ -121,15 +145,11 @@ export async function fetchCalendarIcals(
   const fmt = (d: Date) =>
     d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 
-  const res = await fetch(calendarUrl, {
-    method: "REPORT",
-    headers: {
-      Authorization: authHeader(),
-      Depth: "1",
-      "Content-Type": "application/xml; charset=utf-8",
-      Accept: "application/xml",
-    },
-    body: `<?xml version="1.0" encoding="UTF-8"?>
+  const res = await calFetch(calendarUrl, "REPORT", {
+    Depth: "1",
+    "Content-Type": "application/xml; charset=utf-8",
+    Accept: "application/xml",
+  }, `<?xml version="1.0" encoding="UTF-8"?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop><c:calendar-data/></d:prop>
   <c:filter>
@@ -139,8 +159,7 @@ export async function fetchCalendarIcals(
       </c:comp-filter>
     </c:comp-filter>
   </c:filter>
-</c:calendar-query>`,
-  });
+</c:calendar-query>`);
 
   if (res.status !== 207 && !res.ok) return [];
   const xml = await res.text();
@@ -160,15 +179,12 @@ export async function putCalendarObject(
   uid: string,
   icalString: string
 ): Promise<void> {
-  const res = await fetch(`${calendarUrl.replace(/\/$/, "")}/${uid}.ics`, {
-    method: "PUT",
-    headers: {
-      Authorization: authHeader(),
-      "Content-Type": "text/calendar; charset=utf-8",
-      "If-None-Match": "*",
-    },
-    body: icalString,
-  });
+  const res = await calFetch(
+    `${calendarUrl.replace(/\/$/, "")}/${uid}.ics`,
+    "PUT",
+    { "Content-Type": "text/calendar; charset=utf-8", "If-None-Match": "*" },
+    icalString
+  );
   if (!res.ok) throw new Error(`CalDAV PUT failed: ${res.status}`);
 }
 
