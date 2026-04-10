@@ -49,8 +49,14 @@ async function propfind(url: string, body: string, depth = "0"): Promise<string>
   return res.text();
 }
 
-function firstHref(xml: string): string | null {
-  const m = xml.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/);
+// Extract href nested inside a specific parent element, ignoring the response <href> wrapper
+function nestedHref(xml: string, parent: string): string | null {
+  // Match <parent...>...<href>VALUE</href>...</parent> regardless of namespace prefix
+  const re = new RegExp(
+    `<[A-Za-z0-9]*:?${parent}[^>]*>[\\s\\S]*?<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\\/[A-Za-z0-9]*:?href>`,
+    "i"
+  );
+  const m = xml.match(re);
   return m ? m[1].trim() : null;
 }
 
@@ -71,28 +77,23 @@ async function discoverHomeUrl(): Promise<string> {
   // Step 1: current-user-principal from server root
   const xml1 = await propfind(
     CALDAV_BASE,
-    `<?xml version="1.0" encoding="UTF-8"?>
-<d:propfind xmlns:d="DAV:">
-  <d:prop><d:current-user-principal/></d:prop>
-</d:propfind>`
+    `<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>`
   );
 
-  const principalHref = firstHref(xml1);
+  const principalHref = nestedHref(xml1, "current-user-principal");
   if (!principalHref) throw new Error("CalDAV: could not discover principal URL");
   const principalUrl = toAbsolute(principalHref, CALDAV_BASE);
 
-  // Step 2: calendar-home-set from principal
+  // Step 2: calendar-home-set from principal (may be on a different subdomain)
   const xml2 = await propfind(
     principalUrl,
-    `<?xml version="1.0" encoding="UTF-8"?>
-<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop><c:calendar-home-set/></d:prop>
-</d:propfind>`
+    `<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/></d:prop></d:propfind>`
   );
 
-  const homeHref = firstHref(xml2);
+  const homeHref = nestedHref(xml2, "calendar-home-set");
   if (!homeHref) throw new Error("CalDAV: could not discover calendar home URL");
-  _homeUrl = toAbsolute(homeHref, principalUrl);
+  // homeHref may be absolute (e.g. https://p54-caldav.icloud.com/...)
+  _homeUrl = homeHref.startsWith("http") ? homeHref : toAbsolute(homeHref, principalUrl);
   return _homeUrl;
 }
 
