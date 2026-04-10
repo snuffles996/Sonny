@@ -11,6 +11,9 @@ import { getRecentTurns, appendTurn } from "@/lib/session/kv";
 import { saveNote, searchNotes } from "@/lib/pinecone/records";
 import { saveProfile } from "@/lib/profile/store";
 import { extractProfileUpdate } from "@/lib/anthropic/profile";
+import { getUpcomingEvents, createEvent } from "@/lib/caldav/events";
+import { extractEventDetails } from "@/lib/anthropic/calendar";
+import { isCalDAVConfigured } from "@/lib/caldav/client";
 
 export async function POST(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -46,9 +49,27 @@ export async function POST(req: NextRequest) {
       reply = await generateResponse(message, profile, recentTurns, contextNotes);
       break;
     }
-    case "calendar_read":
+    case "calendar_read": {
+      if (!isCalDAVConfigured()) {
+        reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
+      } else {
+        const events = await getUpcomingEvents();
+        reply = await generateResponse(message, profile, recentTurns, [events]);
+      }
+      break;
+    }
     case "calendar_write": {
-      reply = "Calendar integration coming soon.";
+      if (!isCalDAVConfigured()) {
+        reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
+      } else {
+        const details = await extractEventDetails(message);
+        if (!details) {
+          reply = "I wasn't sure what event to create — could you give me more details?";
+        } else {
+          await createEvent(details);
+          reply = `Done — "${details.title}" has been added to your calendar.`;
+        }
+      }
       break;
     }
     case "profile_update": {
