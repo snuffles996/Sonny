@@ -75,8 +75,10 @@ function parseICalDate(prop: PropResult): ParsedDate {
   // All-day: VALUE=DATE or 8-char string YYYYMMDD
   if (prop.valueType === "DATE" || v.length === 8) {
     const iso = `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}`;
+    // Use noon UTC — safely the same calendar date in any timezone (avoids midnight UTC
+    // being interpreted as the previous day in negative-offset timezones like PDT)
     const date = new Date(`${iso}T12:00:00Z`);
-    const label = new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", {
+    const label = date.toLocaleDateString("en-US", {
       weekday: "short", month: "short", day: "numeric", timeZone: USER_TIMEZONE,
     });
     return { date, allDay: true, label };
@@ -107,10 +109,15 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
   if (calendars.length === 0) return "No calendars found.";
 
   const now = new Date();
-  const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+  // Start from midnight of today in the user's timezone, not the current UTC instant.
+  // Without this, at e.g. 9 PM PDT (= 4 AM UTC next day) the query skips today entirely.
+  const todayDateStr = now.toLocaleDateString("en-CA", { timeZone: USER_TIMEZONE }); // "YYYY-MM-DD"
+  const startOfToday = localToUTC(`${todayDateStr}T00:00:00`, USER_TIMEZONE);
+  const end = new Date(startOfToday.getTime() + days * 24 * 60 * 60 * 1000);
 
   const allIcals = await Promise.all(
-    calendars.map((cal) => fetchCalendarIcals(cal.url, now, end).catch(() => []))
+    calendars.map((cal) => fetchCalendarIcals(cal.url, startOfToday, end).catch(() => []))
   );
 
   interface Event {
@@ -155,7 +162,12 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
     }
   }
 
-  if (events.length === 0) return `No upcoming events in the next ${days} days.`;
+  const todayLabel = now.toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+    timeZone: USER_TIMEZONE,
+  });
+
+  if (events.length === 0) return `Today is ${todayLabel}.\nNo upcoming events in the next ${days} days.`;
 
   events.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
 
@@ -164,7 +176,7 @@ export async function getUpcomingEvents(days = 14): Promise<string> {
     return `• ${e.startLabel}${loc} — ${e.title}`;
   });
 
-  return `Upcoming events (next ${days} days):\n${lines.join("\n")}`;
+  return `Today is ${todayLabel}.\nUpcoming events (next ${days} days):\n${lines.join("\n")}`;
 }
 
 export interface NewEventDetails {
