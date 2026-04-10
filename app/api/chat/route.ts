@@ -11,11 +11,28 @@ import { getRecentTurns, appendTurn } from "@/lib/session/kv";
 import { saveNote, searchNotes } from "@/lib/pinecone/records";
 import { saveProfile } from "@/lib/profile/store";
 import { extractProfileUpdate } from "@/lib/anthropic/profile";
-import { getUpcomingEvents, createEvent } from "@/lib/caldav/events";
+import { getUpcomingEvents, createEvent, USER_TIMEZONE } from "@/lib/caldav/events";
 import { extractEventDetails } from "@/lib/anthropic/calendar";
 import { isCalDAVConfigured } from "@/lib/caldav/client";
 import { extractRecipeFromUrl, extractUrlFromMessage } from "@/lib/recipes/extract";
 import { addRecipe } from "@/lib/recipes/store";
+import { detectTeam, findGame } from "@/lib/sports/lookup";
+
+// Find the next game for a team within the next `lookaheadDays` days.
+// Returns [game, dateStamp] or null if none found.
+async function findNextGame(message: string, lookaheadDays = 7) {
+  const team = detectTeam(message);
+  if (!team) return null;
+
+  const now = new Date();
+  for (let i = 0; i < lookaheadDays; i++) {
+    const d = new Date(now.getTime() + i * 86400000);
+    const stamp = d.toLocaleDateString("en-CA", { timeZone: USER_TIMEZONE }).replace(/-/g, "");
+    const game = await findGame(team, stamp);
+    if (game) return { game, team };
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -74,12 +91,17 @@ export async function POST(req: NextRequest) {
         reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
       } else {
         try {
-          const details = await extractEventDetails(message);
+          // Try to enrich with real game data if the message mentions a team
+          const sportsResult = await findNextGame(message);
+          const details = await extractEventDetails(message, sportsResult?.game);
           if (!details) {
             reply = "I wasn't sure what event to create — could you give me more details?";
           } else {
             await createEvent(details);
-            reply = `Done — "${details.title}" has been added to your calendar.`;
+            const gameNote = sportsResult?.game
+              ? ` (game time from ESPN: ${sportsResult.game.startTimeUTC})`
+              : "";
+            reply = `Done — "${details.title}" has been added to your calendar.${gameNote}`;
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -89,6 +111,23 @@ export async function POST(req: NextRequest) {
             reply = `Calendar error: ${msg}`;
           }
         }
+      }
+      break;
+    }
+    case "sports_query": {
+      const sportsResult = await findNextGame(message);
+      if (!sportsResult) {
+        // No team detected or no game found — fall back to general response
+        reply = await generateResponse(message, profile, recentTurns, contextNotes);
+      } else {
+        const { game, team } = sportsResult;
+        const startLabel = new Date(game.startTimeUTC).toLocaleString("en-US", {
+          weekday: "long", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit", timeZone: USER_TIMEZONE,
+        });
+        const homeAway = game.isHome ? "home vs." : "away @";
+        const opponent = game.isHome ? game.awayTeam : game.homeTeam;
+        reply = `Next ${team.fullName} game: **${homeAway} ${opponent}** — ${startLabel} at ${game.venue}.`;
       }
       break;
     }

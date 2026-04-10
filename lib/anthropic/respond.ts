@@ -14,6 +14,7 @@ function buildSystemPrompt(profile: UserProfile): string {
     `- Add new calendar events (calendar write)`,
     `- Update the user's profile / preferences (profile update)`,
     `- Add a recipe from a URL (recipe add)`,
+    `- Look up a sports team's next game via ESPN — NFL, MLB, NBA, NHL (sports query)`,
     ``,
     `## Important`,
     `Only claim to have done something if it was explicitly handled before this response was generated.`,
