@@ -1,4 +1,4 @@
-import { getAnthropicClient, MODEL } from "./client";
+import { getAnthropicClient, FAST_MODEL } from "./client";
 
 export type Intent =
   | "save_note"
@@ -19,7 +19,7 @@ export async function classifyIntent(message: string): Promise<Intent> {
   const client = getAnthropicClient();
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: FAST_MODEL,
     max_tokens: 64,
     system: `Classify the user's message into exactly one intent.\n\nIntents:\n${INTENT_DESCRIPTIONS}`,
     messages: [{ role: "user", content: message }],

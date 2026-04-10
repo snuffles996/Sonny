@@ -22,14 +22,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "message required" }, { status: 400 });
   }
 
-  // Load profile and session context in parallel
-  const [profile, recentTurns] = await Promise.all([
+  // Load profile, session turns, intent classification, and context search all in parallel
+  const [profile, recentTurns, intent, contextNotes] = await Promise.all([
     getProfile(userId),
     getRecentTurns(userId),
+    classifyIntent(message),
+    searchNotes(userId, message), // run speculatively — used if intent is query
   ]);
-
-  // Classify intent and route
-  const intent = await classifyIntent(message);
 
   let reply: string;
   let saved = false;
@@ -42,7 +41,6 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "query": {
-      const contextNotes = await searchNotes(userId, message);
       reply = await generateResponse(message, profile, recentTurns, contextNotes);
       break;
     }
