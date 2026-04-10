@@ -3,8 +3,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "edge";
-
 export async function POST(req: NextRequest) {
   // TODO: authenticate user (Kevin vs Sarah via header/token)
   // TODO: assemble context (profile + Pinecone + KV session turns + calendar if relevant)
