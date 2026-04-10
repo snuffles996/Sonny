@@ -13,6 +13,8 @@ const TOKEN_KEY = "sonny_token";
 export default function ChatPage() {
   const [token, setToken] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState("");
+  const [tokenError, setTokenError] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,13 +30,30 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  function handleTokenSubmit(e: React.FormEvent) {
+  async function handleTokenSubmit(e: React.FormEvent) {
     e.preventDefault();
     const t = tokenInput.trim();
     if (!t) return;
-    localStorage.setItem(TOKEN_KEY, t);
-    setToken(t);
-    setTokenInput("");
+    setTokenError("");
+    setUnlocking(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hi" }),
+      });
+      if (res.status === 401) {
+        setTokenError("Wrong access code.");
+        return;
+      }
+      localStorage.setItem(TOKEN_KEY, t);
+      setToken(t);
+      setTokenInput("");
+    } catch {
+      setTokenError("Connection error. Try again.");
+    } finally {
+      setUnlocking(false);
+    }
   }
 
   const send = useCallback(
@@ -115,16 +134,24 @@ export default function ChatPage() {
         <h1 className={styles.lockTitle}>Sonny</h1>
         <form onSubmit={handleTokenSubmit} className={styles.lockForm}>
           <input
-            type="password"
+            type="text"
             placeholder="Access code"
             value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
+            onChange={(e) => { setTokenInput(e.target.value); setTokenError(""); }}
             className={styles.lockInput}
             autoFocus
-            autoComplete="current-password"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
-          <button type="submit" className={styles.lockButton}>
-            Unlock
+          {tokenError && (
+            <p style={{ color: "#ff6b6b", fontSize: "0.85rem", textAlign: "center", margin: 0 }}>
+              {tokenError}
+            </p>
+          )}
+          <button type="submit" className={styles.lockButton} disabled={unlocking}>
+            {unlocking ? "Checking…" : "Unlock"}
           </button>
         </form>
       </div>
