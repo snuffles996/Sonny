@@ -1,6 +1,6 @@
 // POST /api/chat
 // Body: { message: string }
-// Header: Authorization: Bearer <KEVIN_SECRET or SARAH_SECRET>
+// Header: Authorization: Bearer <KEVIN_SECRET or KYLIE_SECRET>
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";

@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       // TODO: scan Pinecone for emerging clusters
       break;
     case "cross-user-detection":
-      // TODO: compare kevin + sarah notes for shared namespace candidates
+      // TODO: compare kevin + kylie notes for shared namespace candidates
       break;
     case "weekly-briefing":
       // TODO: generate + deliver weekly summary

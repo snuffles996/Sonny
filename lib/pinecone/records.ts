@@ -34,7 +34,7 @@ async function embed(
 
 function userNamespaces(userId: UserId): string[] {
   const personal =
-    userId === "kevin" ? NAMESPACES.kevinNotes : NAMESPACES.sarahNotes;
+    userId === "kevin" ? NAMESPACES.kevinNotes : NAMESPACES.kylieNotes;
   return [
     personal,
     NAMESPACES.sharedRestaurants,
@@ -47,7 +47,7 @@ function userNamespaces(userId: UserId): string[] {
 export async function saveNote(userId: UserId, text: string): Promise<string> {
   const index = getIndex();
   const namespace =
-    userId === "kevin" ? NAMESPACES.kevinNotes : NAMESPACES.sarahNotes;
+    userId === "kevin" ? NAMESPACES.kevinNotes : NAMESPACES.kylieNotes;
   const id = crypto.randomUUID();
 
   const [vector] = await embed([text], "passage");

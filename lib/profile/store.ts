@@ -12,8 +12,8 @@ const DEFAULTS: Record<UserId, UserProfile> = {
     standingContext: "",
     updatedAt: new Date().toISOString(),
   },
-  sarah: {
-    userId: "sarah",
+  kylie: {
+    userId: "kylie",
     homeLocation: "",
     workLocation: "",
     commuteCorridor: "",

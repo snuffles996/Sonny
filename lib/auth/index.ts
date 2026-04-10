@@ -6,6 +6,6 @@ export function authenticateUser(req: NextRequest): UserId | null {
   if (!auth?.startsWith("Bearer ")) return null;
   const token = auth.slice(7);
   if (token === process.env.KEVIN_SECRET) return "kevin";
-  if (token === process.env.SARAH_SECRET) return "sarah";
+  if (token === process.env.KYLIE_SECRET) return "kylie";
   return null;
 }

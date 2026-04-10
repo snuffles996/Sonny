@@ -18,8 +18,8 @@ export function getIndex() {
 export const NAMESPACES = {
   kevinNotes: "kevin-notes",
   kevinConversations: "kevin-conversations",
-  sarahNotes: "sarah-notes",
-  sarahConversations: "sarah-conversations",
+  kylieNotes: "kylie-notes",
+  kylieConversations: "kylie-conversations",
   sharedRestaurants: "shared-restaurants",
   sharedMovies: "shared-movies",
   sharedRecipes: "shared-recipes",

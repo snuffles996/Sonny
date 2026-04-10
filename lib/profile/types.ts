@@ -1,6 +1,6 @@
 // User profile — injected into every Claude call, not stored in Pinecone
 
-export type UserId = "kevin" | "sarah";
+export type UserId = "kevin" | "kylie";
 
 export interface UserProfile {
   userId: UserId;

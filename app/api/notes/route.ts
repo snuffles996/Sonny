@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   // TODO: embed text via Anthropic embeddings
-  // TODO: upsert into correct Pinecone namespace (kevin-notes | sarah-notes)
+  // TODO: upsert into correct Pinecone namespace (kevin-notes | kylie-notes)
   // TODO: async trigger Obsidian mirror write
   return NextResponse.json({ message: "notes POST stub" }, { status: 200 });
 }
