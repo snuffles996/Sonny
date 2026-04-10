@@ -55,8 +55,17 @@ export async function POST(req: NextRequest) {
       if (!isCalDAVConfigured()) {
         reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
       } else {
-        const events = await getUpcomingEvents();
-        reply = await generateResponse(message, profile, recentTurns, [events]);
+        try {
+          const events = await getUpcomingEvents();
+          reply = await generateResponse(message, profile, recentTurns, [events]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("403")) {
+            reply = "I couldn't access your calendar — the credentials may be wrong. Make sure CALDAV_PASSWORD is an app-specific password from appleid.apple.com, not your regular Apple ID password.";
+          } else {
+            reply = `Calendar error: ${msg}`;
+          }
+        }
       }
       break;
     }
@@ -64,12 +73,21 @@ export async function POST(req: NextRequest) {
       if (!isCalDAVConfigured()) {
         reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
       } else {
-        const details = await extractEventDetails(message);
-        if (!details) {
-          reply = "I wasn't sure what event to create — could you give me more details?";
-        } else {
-          await createEvent(details);
-          reply = `Done — "${details.title}" has been added to your calendar.`;
+        try {
+          const details = await extractEventDetails(message);
+          if (!details) {
+            reply = "I wasn't sure what event to create — could you give me more details?";
+          } else {
+            await createEvent(details);
+            reply = `Done — "${details.title}" has been added to your calendar.`;
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("403")) {
+            reply = "I couldn't write to your calendar — check that CALDAV_PASSWORD is an app-specific password from appleid.apple.com.";
+          } else {
+            reply = `Calendar error: ${msg}`;
+          }
         }
       }
       break;
