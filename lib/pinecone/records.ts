@@ -1,11 +1,36 @@
-// Upsert and search using Pinecone integrated inference (llama-text-embed-v2).
-// The index handles embedding automatically — we just pass raw text.
-// Note: TEXT_FIELD must match the source field configured when creating the index.
+// Upsert and search using Pinecone Inference API for embeddings + standard vector operations.
+// The index (dimension 1024, cosine) stores pre-computed llama-text-embed-v2 vectors.
 
 import { getIndex, NAMESPACES } from "./client";
 import type { UserId } from "@/lib/profile/types";
 
-const TEXT_FIELD = "text"; // must match the field name set in Pinecone index config
+const EMBED_MODEL = "llama-text-embed-v2";
+
+async function embed(
+  texts: string[],
+  inputType: "passage" | "query"
+): Promise<number[][]> {
+  const res = await fetch("https://api.pinecone.io/embed", {
+    method: "POST",
+    headers: {
+      "Api-Key": process.env.PINECONE_API_KEY!,
+      "Content-Type": "application/json",
+      "X-Pinecone-API-Version": "2025-04",
+    },
+    body: JSON.stringify({
+      model: EMBED_MODEL,
+      inputs: texts.map((text) => ({ text })),
+      parameters: { input_type: inputType },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Pinecone embed failed: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.data.map((d: { values: number[] }) => d.values);
+}
 
 function userNamespaces(userId: UserId): string[] {
   const personal =
@@ -25,14 +50,10 @@ export async function saveNote(userId: UserId, text: string): Promise<string> {
     userId === "kevin" ? NAMESPACES.kevinNotes : NAMESPACES.sarahNotes;
   const id = crypto.randomUUID();
 
-  await index.namespace(namespace).upsertRecords({
+  const [vector] = await embed([text], "passage");
+  await index.namespace(namespace).upsert({
     records: [
-      {
-        id,
-        [TEXT_FIELD]: text,
-        userId,
-        createdAt: Date.now(),
-      },
+      { id, values: vector, metadata: { text, userId, createdAt: Date.now() } },
     ],
   });
 
@@ -47,21 +68,24 @@ export async function searchNotes(
   const index = getIndex();
   const namespaces = userNamespaces(userId);
 
+  const [queryVector] = await embed([query], "query");
+
   const searches = await Promise.allSettled(
     namespaces.map((ns) =>
-      index.namespace(ns).searchRecords({
-        query: { topK, inputs: { text: query } },
-        fields: [TEXT_FIELD],
+      index.namespace(ns).query({
+        vector: queryVector,
+        topK,
+        includeMetadata: true,
       })
     )
   );
 
   return searches
     .flatMap((r) =>
-      r.status === "fulfilled" ? (r.value.result?.hits ?? []) : []
+      r.status === "fulfilled" ? (r.value.matches ?? []) : []
     )
-    .sort((a, b) => (b._score ?? 0) - (a._score ?? 0))
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, topK)
-    .map((hit) => (hit.fields as Record<string, string>)[TEXT_FIELD])
+    .map((match) => match.metadata?.text as string)
     .filter(Boolean);
 }
