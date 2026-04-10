@@ -7,6 +7,7 @@ import styles from "./BottomNav.module.css";
 const TABS = [
   { href: "/chat", label: "Chat", icon: "💬" },
   { href: "/recipes", label: "Recipes", icon: "🍳" },
+  { href: "/mealplan", label: "Meals", icon: "🍽️" },
 ];
 
 export default function BottomNav() {

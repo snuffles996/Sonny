@@ -68,7 +68,7 @@ function getProp(vevent: string, name: string): PropResult | null {
 }
 
 // Convert a local datetime string + timezone to a UTC Date using Intl
-function localToUTC(localISO: string, tzid: string): Date {
+export function localToUTC(localISO: string, tzid: string): Date {
   const fakeUTC = new Date(localISO + "Z");
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tzid,
@@ -152,14 +152,28 @@ async function fetchSubscriptionIcals(url: string, start: Date, end: Date): Prom
 // Public API
 // ---------------------------------------------------------------------------
 
-export async function getUpcomingEvents(days = 14): Promise<string> {
+export async function getUpcomingEvents(
+  options?: number | { from: Date; to: Date }
+): Promise<string> {
   const now = new Date();
+  let startOfToday: Date;
+  let end: Date;
+  let days: number;
 
-  // Start from midnight of today in the user's timezone, not the current UTC instant.
-  // Without this, at e.g. 9 PM PDT (= 4 AM UTC next day) the query skips today entirely.
-  const todayDateStr = now.toLocaleDateString("en-CA", { timeZone: USER_TIMEZONE }); // "YYYY-MM-DD"
-  const startOfToday = localToUTC(`${todayDateStr}T00:00:00`, USER_TIMEZONE);
-  const end = new Date(startOfToday.getTime() + days * 24 * 60 * 60 * 1000);
+  if (options && typeof options === "object") {
+    // Explicit date range
+    startOfToday = options.from;
+    end = options.to;
+    days = Math.ceil((end.getTime() - startOfToday.getTime()) / 86400000);
+  } else {
+    // Default: N days forward from midnight today
+    days = typeof options === "number" ? options : 14;
+    // Start from midnight of today in the user's timezone, not the current UTC instant.
+    // Without this, at e.g. 9 PM PDT (= 4 AM UTC next day) the query skips today entirely.
+    const todayDateStr = now.toLocaleDateString("en-CA", { timeZone: USER_TIMEZONE }); // "YYYY-MM-DD"
+    startOfToday = localToUTC(`${todayDateStr}T00:00:00`, USER_TIMEZONE);
+    end = new Date(startOfToday.getTime() + days * 24 * 60 * 60 * 1000);
+  }
 
   // CalDAV calendars + direct ICS subscriptions in parallel
   const [calendars, ...subscriptionEventGroups] = await Promise.all([
@@ -289,4 +303,69 @@ export async function createEvent(details: NewEventDetails): Promise<void> {
   lines.push("END:VEVENT", "END:VCALENDAR");
 
   await putCalendarObject(preferred.url, uid, lines.join("\r\n"));
+}
+
+// ---------------------------------------------------------------------------
+// Deduplication
+// ---------------------------------------------------------------------------
+
+export interface EventDraft {
+  title: string;
+  startLocal: string; // "YYYYMMDDTHHMMSS"
+  endLocal: string;
+  allDay: boolean;
+  timezone: string;
+  location?: string;
+  notes?: string;
+}
+
+export interface DedupeResult {
+  toCreate: EventDraft[];
+  toSkip: EventDraft[];
+}
+
+// Check a list of draft events against existing CalDAV events in a date range.
+// Matches on title (case-insensitive) + date (YYYYMMDD of startLocal).
+export async function checkDuplicates(
+  drafts: EventDraft[],
+  from: Date,
+  to: Date
+): Promise<DedupeResult> {
+  let existingKeys: Set<string>;
+  try {
+    const calendars = await listCalendars();
+    const writeCalendar =
+      calendars.find((c) => c.displayName.toLowerCase() === WRITE_CALENDAR_NAME) ??
+      calendars[0];
+    if (!writeCalendar) return { toCreate: drafts, toSkip: [] };
+
+    const icals = await fetchCalendarIcals(writeCalendar.url, from, to);
+    existingKeys = new Set<string>();
+    for (const ical of icals) {
+      const raw = unfold(ical);
+      for (const vevent of getVEvents(raw)) {
+        const summary = getProp(vevent, "SUMMARY");
+        const dtstart = getProp(vevent, "DTSTART");
+        if (!summary || !dtstart) continue;
+        const title = summary.value.replace(/\\,/g, ",").trim().toLowerCase();
+        const dateStamp = dtstart.value.slice(0, 8); // YYYYMMDD
+        existingKeys.add(`${title}|${dateStamp}`);
+      }
+    }
+  } catch {
+    // If we can't fetch existing events, create all drafts
+    return { toCreate: drafts, toSkip: [] };
+  }
+
+  const toCreate: EventDraft[] = [];
+  const toSkip: EventDraft[] = [];
+  for (const draft of drafts) {
+    const key = `${draft.title.trim().toLowerCase()}|${draft.startLocal.slice(0, 8)}`;
+    if (existingKeys.has(key)) {
+      toSkip.push(draft);
+    } else {
+      toCreate.push(draft);
+    }
+  }
+  return { toCreate, toSkip };
 }

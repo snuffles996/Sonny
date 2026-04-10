@@ -2,7 +2,7 @@
 
 const CALDAV_BASE = "https://caldav.icloud.com";
 
-function authHeader(): string {
+export function authHeader(): string {
   // trim() guards against accidental whitespace in env var values
   const user = (process.env.CALDAV_USERNAME ?? "").trim();
   const pass = (process.env.CALDAV_PASSWORD ?? "").trim();
@@ -11,7 +11,7 @@ function authHeader(): string {
 
 // fetch() strips Authorization on cross-origin redirects (e.g. caldav.icloud.com →
 // p12-caldav.icloud.com), causing a 401. Follow redirects manually to re-attach auth.
-async function calFetch(
+export async function calFetch(
   url: string,
   method: string,
   headers: Record<string, string>,
