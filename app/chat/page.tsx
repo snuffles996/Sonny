@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import styles from "./chat.module.css";
 
 interface Message {
@@ -171,7 +173,13 @@ export default function ChatPage() {
               msg.role === "user" ? styles.userBubble : styles.assistantBubble
             }`}
           >
-            {msg.content}
+            {msg.role === "user" ? (
+              msg.content
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {msg.content}
+              </ReactMarkdown>
+            )}
           </div>
         ))}
         {loading && (

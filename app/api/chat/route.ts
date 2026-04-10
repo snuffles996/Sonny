@@ -83,7 +83,6 @@ export async function POST(req: NextRequest) {
       break;
     }
     default: {
-      const contextNotes = await searchNotes(userId, message);
       reply = await generateResponse(message, profile, recentTurns, contextNotes);
     }
   }
