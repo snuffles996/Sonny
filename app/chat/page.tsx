@@ -13,6 +13,7 @@ interface Message {
 
 const TOKEN_KEY = "sonny_token";
 const VISITED_KEY = "sonny_visited";
+const MESSAGES_KEY = "sonny_chat_messages";
 
 const FIRST_VISIT_GREETING = `Hey, I'm Sonny — your personal AI.
 
@@ -47,11 +48,26 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!token) return;
+    // Restore persisted messages
+    try {
+      const saved = localStorage.getItem(MESSAGES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Message[];
+        if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
+      }
+    } catch { /* ignore parse errors */ }
     if (!localStorage.getItem(VISITED_KEY)) {
       setIsFirstVisit(true);
       localStorage.setItem(VISITED_KEY, "1");
     }
   }, [token]);
+
+  // Persist messages whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+    }
+  }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -102,6 +118,7 @@ export default function ChatPage() {
 
         if (res.status === 401) {
           localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(MESSAGES_KEY);
           setToken(null);
           setMessages([]);
           return;

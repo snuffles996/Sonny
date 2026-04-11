@@ -35,7 +35,14 @@
       "Bash(python3 -m json.tool)",
       "Bash(curl:*)",
       "Bash(npx tsc:*)",
-      "mcp__plugin_vercel-plugin_vercel__list_deployments"
+      "mcp__plugin_vercel-plugin_vercel__list_deployments",
+      "mcp__plugin_vercel-plugin_vercel__deploy_to_vercel",
+      "Bash(read f:*)",
+      "mcp__plugin_vercel-plugin_vercel__get_runtime_logs",
+      "Bash(python3 -c ':*)",
+      "Bash(grep -E \"\\\\.\\(md|json\\)$\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

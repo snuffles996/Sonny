@@ -45,11 +45,12 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body?.slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
 
-  const { slug, made, notes, replacementSlug } = body as {
+  const { slug, made, notes, replacementSlug, servings } = body as {
     slug: string;
     made?: boolean;
     notes?: string;
     replacementSlug?: string;
+    servings?: number;
   };
 
   const plan = await getActivePlan();
@@ -75,6 +76,11 @@ export async function PATCH(req: NextRequest) {
       if (notes) recipes[recipeIdx].notes = notes;
       await setRecipes(recipes);
     }
+  }
+
+  // Update per-meal serving count
+  if (servings !== undefined) {
+    plan.meals[idx].servings = Math.min(Math.max(servings, 1), 10);
   }
 
   // Swap a meal for a different recipe

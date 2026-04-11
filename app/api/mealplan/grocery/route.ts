@@ -7,6 +7,7 @@ import { getActivePlan, saveActivePlan } from "@/lib/mealplan/store";
 import { getRecipes } from "@/lib/recipes/store";
 import { buildGroceryList } from "@/lib/mealplan/grocery";
 import { pushGroceryList } from "@/lib/caldav/reminders";
+import { getExclusions } from "@/lib/mealplan/pantry";
 
 export async function GET(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -15,8 +16,8 @@ export async function GET(req: NextRequest) {
   const plan = await getActivePlan();
   if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
 
-  const recipes = await getRecipes();
-  const items = await buildGroceryList(plan.meals, recipes, plan.servings);
+  const [recipes, exclusions] = await Promise.all([getRecipes(), getExclusions()]);
+  const items = await buildGroceryList(plan.meals, recipes, plan.servings, exclusions);
   return NextResponse.json({ items });
 }
 
@@ -30,8 +31,8 @@ export async function POST(req: NextRequest) {
   const plan = await getActivePlan();
   if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
 
-  const recipes = await getRecipes();
-  const items = await buildGroceryList(plan.meals, recipes, plan.servings);
+  const [recipes, exclusions] = await Promise.all([getRecipes(), getExclusions()]);
+  const items = await buildGroceryList(plan.meals, recipes, plan.servings, exclusions);
   const result = await pushGroceryList(items, userId, mode);
 
   if (result.existingCount > 0 && mode === "replace") {

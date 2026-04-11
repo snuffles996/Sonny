@@ -226,12 +226,11 @@ export async function pushGroceryList(
     await clearList(listHref);
   }
 
-  // Push items: each as "Name — qty"
-  let added = 0;
-  for (const item of items) {
-    const title = `${item.name} — ${item.displayQty}`;
-    await addReminder(listHref, title);
-    added++;
+  // Push items in parallel chunks of 5 to avoid sequential timeout
+  const titles = items.map((item) => `${item.name} — ${item.displayQty}`);
+  const CHUNK = 5;
+  for (let i = 0; i < titles.length; i += CHUNK) {
+    await Promise.all(titles.slice(i, i + CHUNK).map((t) => addReminder(listHref, t)));
   }
-  return { added, listName, existingCount: 0 };
+  return { added: titles.length, listName, existingCount: 0 };
 }

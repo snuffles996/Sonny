@@ -79,3 +79,65 @@
   color: #666;
   font-style: italic;
 }
+
+/* Actions column: servings stepper + swap button */
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.servingsRow {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.stepBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid #2a2a2a;
+  background: #1a1a1a;
+  color: #aaa;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.stepBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.servingsCount {
+  font-size: 0.78rem;
+  color: #888;
+  min-width: 1rem;
+  text-align: center;
+}
+
+.swapBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #555;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.swapBtn:hover {
+  color: #888;
+  border-color: #444;
+}
