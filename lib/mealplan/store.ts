@@ -7,7 +7,7 @@ const HISTORY_KEY = "mealplan:shared:history";
 const PREFS_KEY = "mealplan:shared:prefs";
 
 const DEFAULT_PREFS: MealPlanPrefs = {
-  defaultRemindersListName: "Grocery List",
+  defaultRemindersListName: "Grocery",
 };
 
 export async function getActivePlan(): Promise<MealPlan | null> {
