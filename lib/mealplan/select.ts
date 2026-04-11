@@ -63,20 +63,40 @@ export async function selectMeals(ctx: SelectionContext): Promise<SuggestedMeal[
     });
   }
 
+  // Shuffle before variety filtering so selection isn't alphabetically biased
+  const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+
   // Tag quick meals (< 30 min)
-  const tagged = candidates.map((r) => {
+  const tagged = shuffled.map((r) => {
     const minutes = parseTotalTimeMinutes(r.totalTime);
     return { recipe: r, quickMeal: minutes !== null && minutes <= 30 };
   });
 
-  // Step 4: Variety pass — cap any single cuisine at ceil(count/3)
+  // Detect primary protein for a recipe
+  function detectProtein(recipe: Recipe): string {
+    const text = (recipe.name + " " + recipe.content).toLowerCase();
+    if (/\b(beef|steak|ground beef|brisket|chuck)\b/.test(text)) return "beef";
+    if (/\b(chicken|poultry)\b/.test(text)) return "chicken";
+    if (/\b(pork|bacon|ham|sausage|carnitas)\b/.test(text)) return "pork";
+    if (/\b(fish|salmon|tuna|cod|tilapia|shrimp|seafood|scallop)\b/.test(text)) return "seafood";
+    if (/\b(lamb|venison|bison|turkey)\b/.test(text)) return "other-meat";
+    return "vegetarian";
+  }
+
+  // Step 4: Variety pass — cap any single cuisine at ceil(count/3), protein at ceil(count/3)
   const maxPerCuisine = Math.ceil(count / 3);
+  const maxPerProtein = Math.ceil(count / 3);
   const cuisineCounts: Record<string, number> = {};
+  const proteinCounts: Record<string, number> = {};
   const varied = tagged.filter(({ recipe }) => {
     const cuisine = (recipe.cuisine ?? "Other").toLowerCase();
-    const current = cuisineCounts[cuisine] ?? 0;
-    if (current >= maxPerCuisine) return false;
-    cuisineCounts[cuisine] = current + 1;
+    const protein = detectProtein(recipe);
+    const cCount = cuisineCounts[cuisine] ?? 0;
+    const pCount = proteinCounts[protein] ?? 0;
+    if (cCount >= maxPerCuisine) return false;
+    if (pCount >= maxPerProtein) return false;
+    cuisineCounts[cuisine] = cCount + 1;
+    proteinCounts[protein] = pCount + 1;
     return true;
   });
 

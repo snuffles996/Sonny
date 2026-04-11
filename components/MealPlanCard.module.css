@@ -14,19 +14,18 @@
 }
 
 .checkbox {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   border: 2px solid #333;
   background: transparent;
   color: #4ade80;
-  font-size: 0.85rem;
+  font-size: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
-  margin-top: 2px;
 }
 
 .card:not(.made) .checkbox:hover {
@@ -96,13 +95,13 @@
 }
 
 .stepBtn {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   border: 1px solid #2a2a2a;
   background: #1a1a1a;
   color: #aaa;
-  font-size: 0.9rem;
+  font-size: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,13 +123,13 @@
 }
 
 .swapBtn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   border: 1px solid #2a2a2a;
   background: transparent;
   color: #555;
-  font-size: 0.9rem;
+  font-size: 1rem;
   cursor: pointer;
   display: flex;
   align-items: center;

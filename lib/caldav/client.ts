@@ -71,7 +71,7 @@ function toAbsolute(href: string, base: string): string {
 // ---------------------------------------------------------------------------
 let _homeUrl: string | null = null;
 
-async function discoverHomeUrl(): Promise<string> {
+export async function discoverHomeUrl(): Promise<string> {
   if (_homeUrl) return _homeUrl;
 
   // Step 1: current-user-principal from server root

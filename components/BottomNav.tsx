@@ -8,6 +8,7 @@ const TABS = [
   { href: "/chat", label: "Chat", icon: "💬" },
   { href: "/recipes", label: "Recipes", icon: "🍳" },
   { href: "/mealplan", label: "Meals", icon: "🍽️" },
+  { href: "/skinlog", label: "Skin", icon: "🧴" },
 ];
 
 export default function BottomNav() {

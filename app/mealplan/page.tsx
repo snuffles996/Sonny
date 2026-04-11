@@ -34,10 +34,15 @@ export default function MealPlanPage() {
   const [groceryItems, setGroceryItems] = useState<GroceryItem[] | null>(null);
   const [buildingGrocery, setBuildingGrocery] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [confirmReplace, setConfirmReplace] = useState<{ existingCount: number; listName: string } | null>(null);
 
   // Pantry exclusions
   const [exclusions, setExclusions] = useState<string[]>([]);
+
+  // Household items
+  const [householdItems, setHouseholdItems] = useState<string[]>([]);
+  const [includeHousehold, setIncludeHousehold] = useState(false);
 
   // Modals
   const [checkOffMeal, setCheckOffMeal] = useState<PlannedMeal | null>(null);
@@ -58,11 +63,13 @@ export default function MealPlanPage() {
       fetch("/api/mealplan", { headers }).then((r) => r.json()),
       fetch("/api/recipes", { headers }).then((r) => r.json()),
       fetch("/api/mealplan/exclusions", { headers }).then((r) => r.json()),
+      fetch("/api/mealplan/household", { headers }).then((r) => r.json()),
     ])
-      .then(([planData, recipeData, exclusionData]) => {
+      .then(([planData, recipeData, exclusionData, householdData]) => {
         setPlan(planData.plan ?? null);
         setRecipes(recipeData.recipes ?? []);
         setExclusions(exclusionData.exclusions ?? []);
+        setHouseholdItems(householdData.items ?? []);
       })
       .finally(() => setLoading(false));
   }, [token]);
@@ -93,7 +100,10 @@ export default function MealPlanPage() {
       body: JSON.stringify({ slug, servings }),
     });
     const data = await res.json();
-    if (data.plan) setPlan(data.plan);
+    if (data.plan) {
+      setPlan(data.plan);
+      setGroceryItems(null); // stale — rebuild required after servings change
+    }
   }
 
   async function handleSwap(slug: string, replacementSlug: string) {
@@ -130,22 +140,30 @@ export default function MealPlanPage() {
     setBuildingGrocery(false);
   }
 
-  async function handleSendToReminders(replace = false) {
+  async function handleSendToReminders(replace = false, includeHousehold = false) {
     if (!token || !groceryItems) return;
     setSending(true);
+    setSendError(null);
     setConfirmReplace(null);
-    const res = await fetch("/api/mealplan/grocery", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ replace }),
-    });
-    const data = await res.json();
-    if (data.existingCount > 0 && !replace) {
-      setConfirmReplace({ existingCount: data.existingCount, listName: data.listName });
-    } else if (data.added !== undefined) {
-      setPlan((p) => (p ? { ...p, groceryListSent: true } : p));
+    try {
+      const res = await fetch("/api/mealplan/grocery", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ replace, includeHousehold }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSendError(data.error ?? "Failed to send to Reminders.");
+      } else if (data.existingCount > 0 && !replace) {
+        setConfirmReplace({ existingCount: data.existingCount, listName: data.listName });
+      } else if (data.added !== undefined) {
+        setPlan((p) => (p ? { ...p, groceryListSent: true } : p));
+      }
+    } catch {
+      setSendError("Connection error. Try again.");
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   }
 
   async function handleAddExclusion(name: string) {
@@ -262,18 +280,24 @@ export default function MealPlanPage() {
               {plan.groceryListSent && !confirmReplace && (
                 <p className={styles.sentBadge}>Sent to Reminders</p>
               )}
+              {sendError && (
+                <p className={styles.sendError}>{sendError}</p>
+              )}
               {confirmReplace && (
                 <div className={styles.confirmBanner}>
                   &ldquo;{confirmReplace.listName}&rdquo; already has {confirmReplace.existingCount} items. Replace them?
                   <div className={styles.confirmActions}>
                     <button className={styles.confirmBtn} onClick={() => setConfirmReplace(null)}>Cancel</button>
-                    <button className={`${styles.confirmBtn} ${styles.primary}`} onClick={() => handleSendToReminders(true)}>Replace</button>
+                    <button className={`${styles.confirmBtn} ${styles.primary}`} onClick={() => handleSendToReminders(true, includeHousehold)}>Replace</button>
                   </div>
                 </div>
               )}
               <GroceryList
                 items={groceryItems}
-                onSendToReminders={() => handleSendToReminders(false)}
+                householdItems={householdItems}
+                includeHousehold={includeHousehold}
+                onToggleHousehold={() => setIncludeHousehold((v) => !v)}
+                onSendToReminders={() => handleSendToReminders(false, includeHousehold)}
                 sending={sending}
               />
               <PantryExclusions

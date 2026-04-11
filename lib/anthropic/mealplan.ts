@@ -39,7 +39,7 @@ export async function pickMeals(
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 512,
-      system: `You are helping plan meals for the week. Select exactly ${count} recipes from the candidates list. Prefer variety across cuisines. Give a brief, friendly reason for each pick (1 sentence).${prefNote}${busyNote}`,
+      system: `You are helping plan meals for the week. Select exactly ${count} recipes from the candidates list. Maximize variety: spread across different cuisines AND different proteins (beef, chicken, pork, seafood, vegetarian). Avoid picking more than one recipe that shares the same main protein unless no other options exist. Give a brief, friendly reason for each pick (1 sentence).${prefNote}${busyNote}`,
       messages: [{ role: "user", content: `Candidates:\n${candidateList}\n\nSelect ${count} meals.` }],
       tools: [
         {

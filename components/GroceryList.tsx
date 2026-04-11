@@ -11,11 +11,14 @@ const CATEGORY_ORDER: FoodCategory[] = [
 
 interface Props {
   items: GroceryItem[];
+  householdItems?: string[];
+  includeHousehold: boolean;
+  onToggleHousehold: () => void;
   onSendToReminders: () => void;
   sending?: boolean;
 }
 
-export default function GroceryList({ items, onSendToReminders, sending = false }: Props) {
+export default function GroceryList({ items, householdItems = [], includeHousehold, onToggleHousehold, onSendToReminders, sending = false }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const byCategory = new Map<FoodCategory, GroceryItem[]>();
@@ -72,7 +75,28 @@ export default function GroceryList({ items, onSendToReminders, sending = false 
             })}
           </div>
         ))}
+
+        {/* Household items section */}
+        {householdItems.length > 0 && (
+          <div className={styles.householdSection}>
+            <div className={styles.householdHeader}>
+              <span className={styles.categoryHeader} style={{ margin: 0 }}>Household</span>
+              <button
+                className={`${styles.householdToggle} ${includeHousehold ? styles.householdToggleOn : ""}`}
+                onClick={onToggleHousehold}
+              >
+                {includeHousehold ? "✓ In Reminders" : "+ Add to Reminders"}
+              </button>
+            </div>
+            <div className={styles.householdItems}>
+              {householdItems.map((item) => (
+                <span key={item} className={styles.householdItem}>{item}</span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
       <div className={styles.footer}>
         <button
           className={styles.sendButton}

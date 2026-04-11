@@ -1,0 +1,195 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 680px;
+  margin: 0 auto;
+  background: #000;
+  position: relative;
+}
+
+.header {
+  padding: 1rem 1rem 0.75rem;
+  flex-shrink: 0;
+}
+
+.headerRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+}
+
+.avgBadge {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.content::-webkit-scrollbar { display: none; }
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 3rem 2rem;
+  text-align: center;
+  gap: 0.6rem;
+  height: 100%;
+}
+
+.emptyText {
+  color: #555;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.emptyHint {
+  color: #3a3a3a;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.emptyBtn {
+  margin-top: 0.5rem;
+  padding: 0.65rem 1.5rem;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #888;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.list {
+  padding: 0 1rem 5rem;
+}
+
+.dateGroup {
+  margin-bottom: 1.5rem;
+}
+
+.dateLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #444;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 0.5rem;
+}
+
+.entry {
+  background: #111;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.entryHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.timeLabel {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #aaa;
+  flex: 1;
+}
+
+.ratingDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.deleteBtn {
+  background: transparent;
+  border: none;
+  color: #333;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.deleteBtn:hover {
+  color: #666;
+}
+
+.products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.productTag {
+  font-size: 0.78rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  color: #888;
+}
+
+.symptoms {
+  font-size: 0.85rem;
+  color: #bbb;
+  margin: 0 0 0.3rem;
+  line-height: 1.5;
+}
+
+.notes {
+  font-size: 0.8rem;
+  color: #666;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Floating action button */
+.fab {
+  position: fixed;
+  bottom: calc(68px + env(safe-area-inset-bottom) + 1rem);
+  right: max(1rem, calc((100vw - 680px) / 2 + 1rem));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
+  font-size: 1.6rem;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+  z-index: 10;
+}
