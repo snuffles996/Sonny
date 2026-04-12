@@ -1,4 +1,4 @@
-// Temporary debug endpoint — test a single VTODO PUT and return full details
+// Temporary debug endpoint — test Reminders PUT and show existing items
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { calFetch, authHeader, discoverHomeUrl } from "@/lib/caldav/client";
@@ -54,51 +54,80 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Find "Grocery List"
   const groceryList = vtodoLists.find(l => l.normalizedName.toLowerCase() === "grocery list");
-
   if (!groceryList) {
-    return NextResponse.json({ homeUrl, vtodoLists, groceryList: null, putTest: null });
+    return NextResponse.json({ homeUrl, vtodoLists, groceryList: null });
   }
 
-  // Try a test PUT
-  const uid = `test-${crypto.randomUUID()}`;
+  // Get existing items with their actual hrefs (not reconstructed from UID)
+  const reportRes = await calFetch(groceryList.url, "REPORT", {
+    Depth: "1",
+    "Content-Type": "application/xml; charset=utf-8",
+    Accept: "application/xml",
+  }, `<?xml version="1.0" encoding="UTF-8"?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><d:getetag/><d:href/><c:calendar-data/></d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="VTODO"/>
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>`);
+
+  const reportText = await reportRes.text();
+  const responseBlocks = reportText.match(/<[A-Za-z0-9]*:?response[\s\S]*?<\/[A-Za-z0-9]*:?response>/g) ?? [];
+  const existingItems: { href: string; uid: string; summary: string; status: string }[] = [];
+
+  for (const block of responseBlocks) {
+    const hrefM = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i);
+    const calDataM = block.match(/<[A-Za-z0-9]*:?calendar-data[^>]*>([\s\S]*?)<\/[A-Za-z0-9]*:?calendar-data>/i);
+    if (!calDataM) continue;
+    const calData = calDataM[1];
+    const uid = calData.match(/^UID:(.+)$/m)?.[1]?.trim() ?? "";
+    const summary = calData.match(/^SUMMARY:(.+)$/m)?.[1]?.trim() ?? "";
+    const status = calData.match(/^STATUS:(.+)$/m)?.[1]?.trim() ?? "NONE";
+    existingItems.push({ href: hrefM?.[1]?.trim() ?? "", uid, summary, status });
+  }
+
+  // Test 1: PUT with uuid@sonny format (actual addReminder format)
+  const uid1 = `${crypto.randomUUID()}@sonny`;
   const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
-  const ical = [
+  const ical1 = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "CALSCALE:GREGORIAN",
     "PRODID:-//Sonny//Personal AI//EN",
     "BEGIN:VTODO",
-    `UID:${uid}`,
+    `UID:${uid1}`,
     `DTSTAMP:${stamp}`,
-    "SUMMARY:Test item from debug endpoint",
+    "SUMMARY:Cheddar-jack cheese: 4 oz",
     "STATUS:NEEDS-ACTION",
     "END:VTODO",
     "END:VCALENDAR",
   ].join("\r\n") + "\r\n";
 
-  const putUrl = `${groceryList.url}${uid}.ics`;
-  const putRes = await calFetch(putUrl, "PUT", {
-    "Content-Type": "text/calendar; charset=utf-8",
-  }, ical);
+  const putUrl1 = `${groceryList.url}${uid1}.ics`;
+  const putRes1 = await calFetch(putUrl1, "PUT", { "Content-Type": "text/calendar; charset=utf-8" }, ical1);
+  const putBody1 = await putRes1.text().catch(() => "");
+  if (putRes1.ok || putRes1.status === 201) {
+    await calFetch(putUrl1, "DELETE", { Authorization: authHeader() }).catch(() => {});
+  }
 
-  const putBody = await putRes.text().catch(() => "");
-
-  // Clean up — delete the test item
-  if (putRes.ok || putRes.status === 201) {
-    await calFetch(putUrl, "DELETE", { Authorization: authHeader() }).catch(() => {});
+  // Test 2: PUT with plain uuid (no @sonny)
+  const uid2 = crypto.randomUUID();
+  const ical2 = ical1.replace(`UID:${uid1}`, `UID:${uid2}`);
+  const putUrl2 = `${groceryList.url}${uid2}.ics`;
+  const putRes2 = await calFetch(putUrl2, "PUT", { "Content-Type": "text/calendar; charset=utf-8" }, ical2);
+  const putBody2 = await putRes2.text().catch(() => "");
+  if (putRes2.ok || putRes2.status === 201) {
+    await calFetch(putUrl2, "DELETE", { Authorization: authHeader() }).catch(() => {});
   }
 
   return NextResponse.json({
     homeUrl,
-    vtodoLists,
     groceryList,
-    putTest: {
-      url: putUrl,
-      status: putRes.status,
-      ok: putRes.ok,
-      body: putBody.slice(0, 500),
-    },
+    existingItems,
+    putTestAtSonny: { url: putUrl1, status: putRes1.status, ok: putRes1.ok, body: putBody1.slice(0, 500) },
+    putTestPlainUuid: { url: putUrl2, status: putRes2.status, ok: putRes2.ok, body: putBody2.slice(0, 500) },
   });
 }
