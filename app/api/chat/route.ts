@@ -169,10 +169,24 @@ export async function POST(req: NextRequest) {
             reply = "I wasn't sure what event to create — could you give me more details?";
           } else {
             await createEvent(details);
-            const gameNote = sportsResult?.game
-              ? ` (game time from ESPN: ${sportsResult.game.startTimeUTC})`
-              : "";
-            reply = `Done — "${details.title}" has been added to your calendar.${gameNote}`;
+            // Format the event time for the confirmation message
+            let timeLabel: string;
+            if (details.allDay) {
+              const d = details.startLocal.slice(0, 8);
+              timeLabel = new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`).toLocaleDateString("en-US", {
+                weekday: "short", month: "short", day: "numeric", timeZone: USER_TIMEZONE,
+              });
+            } else {
+              const s = details.startLocal; // "YYYYMMDDTHHMMSS"
+              const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}`;
+              timeLabel = new Date(iso).toLocaleString("en-US", {
+                weekday: "short", month: "short", day: "numeric",
+                hour: "numeric", minute: "2-digit", timeZone: USER_TIMEZONE,
+              });
+            }
+            const locationNote = details.location ? ` at ${details.location}` : "";
+            const espnNote = sportsResult?.game ? " (time from ESPN)" : "";
+            reply = `Done — "${details.title}" added for ${timeLabel}${locationNote}.${espnNote}`;
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

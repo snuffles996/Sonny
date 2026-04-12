@@ -2,6 +2,7 @@
 // normalizes units, combines duplicate ingredients, and categorizes.
 
 import { getAnthropicClient, FAST_MODEL } from "@/lib/anthropic/client";
+import { getRedisClient } from "@/lib/redis/client";
 import type { Recipe } from "@/lib/recipes/types";
 import type { PlannedMeal } from "./types";
 
@@ -26,7 +27,9 @@ export interface GroceryItem {
 
 // ── Unit normalization tables ─────────────────────────────────────────────────
 
-const UNIT_ALIASES: Record<string, string> = {
+const UNIT_ALIASES_KEY = "mealplan:shared:unit_aliases";
+
+export const DEFAULT_UNIT_ALIASES: Record<string, string> = {
   // Long forms
   tablespoon: "tbsp", tablespoons: "tbsp", tbsps: "tbsp", tb: "tbsp",
   teaspoon: "tsp", teaspoons: "tsp", tsps: "tsp",
@@ -57,6 +60,15 @@ const UNIT_ALIASES: Record<string, string> = {
   strip: "strip", strips: "strip",
   fillet: "fillet", fillets: "fillet",
 };
+
+// Load unit aliases from Redis, falling back to hardcoded defaults.
+// The Redis value can be edited via a future chat command to add new aliases
+// without a code deploy (e.g. "pkg" → "package").
+export async function getUnitAliases(): Promise<Record<string, string>> {
+  const redis = getRedisClient();
+  const stored = await redis.get<Record<string, string>>(UNIT_ALIASES_KEY);
+  return stored ?? DEFAULT_UNIT_ALIASES;
+}
 
 const FOLK_UNITS = new Set([
   "thumb", "knob", "handful", "bunch", "sprig", "pinch",
@@ -181,7 +193,7 @@ function parseFraction(s: string): number {
   return parseFloat(s);
 }
 
-function parseIngredientLine(line: string, recipeSlug: string, recipeName: string): ParsedIngredient {
+function parseIngredientLine(line: string, recipeSlug: string, recipeName: string, aliases: Record<string, string>): ParsedIngredient {
   // Strip bullet, trailing asterisks/footnote markers, parenthetical notes
   const cleaned = line
     .replace(/^[-*•]\s*/, "")
@@ -202,7 +214,7 @@ function parseIngredientLine(line: string, recipeSlug: string, recipeName: strin
     const qty = parseFraction(fullMatch[1]);
     const rawUnit = fullMatch[2].replace(/\.$/, ""); // strip trailing period from "oz."
     const nameStr = fullMatch[3].trim();
-    const normalized = UNIT_ALIASES[rawUnit];
+    const normalized = aliases[rawUnit];
     if (normalized) {
       return { qty, unit: normalized, isFolkUnit: FOLK_UNITS.has(normalized), name: nameStr, recipeSlug, recipeName };
     }
@@ -376,6 +388,7 @@ export async function buildGroceryList(
   exclusions: string[] = []
 ): Promise<GroceryItem[]> {
   const recipeBySlug = new Map(recipes.map((r) => [r.slug, r]));
+  const aliases = await getUnitAliases();
 
   // Per-recipe default servings (from recipe metadata)
   const recipeServings: Record<string, number> = {};
@@ -405,7 +418,7 @@ export async function buildGroceryList(
       .filter((l) => l.startsWith("-") || l.startsWith("*") || l.startsWith("•"));
 
     for (const line of lines) {
-      const parsed = parseIngredientLine(line, meal.recipeSlug, meal.recipeName);
+      const parsed = parseIngredientLine(line, meal.recipeSlug, meal.recipeName, aliases);
       if (parsed.name) allIngredients.push(parsed);
     }
   }
