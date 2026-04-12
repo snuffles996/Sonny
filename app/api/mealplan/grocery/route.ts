@@ -8,7 +8,7 @@ import { getActivePlan } from "@/lib/mealplan/store";
 import { getGroceryList, saveGroceryList, toggleGroceryItem, clearGroceryList } from "@/lib/mealplan/store";
 import { getRecipes } from "@/lib/recipes/store";
 import { buildGroceryList } from "@/lib/mealplan/grocery";
-import { getExclusions } from "@/lib/mealplan/pantry";
+import { getCombinedExclusions } from "@/lib/mealplan/pantry";
 
 export async function GET(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   if (cached) return NextResponse.json({ items: cached.items, checkedItems: cached.checkedItems });
 
   // Build and cache
-  const [recipes, exclusions] = await Promise.all([getRecipes(), getExclusions()]);
+  const [recipes, exclusions] = await Promise.all([getRecipes(), getCombinedExclusions()]);
   const items = await buildGroceryList(plan.meals, recipes, plan.servings, exclusions);
   await saveGroceryList(items);
   return NextResponse.json({ items, checkedItems: [] });

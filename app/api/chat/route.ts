@@ -23,6 +23,7 @@ import { detectTeam, findGame, getScore, getSchedule, getStandings, getPlayerSta
 import { parseDateRange } from "@/lib/anthropic/daterange";
 import { extractSportsQuery } from "@/lib/anthropic/sports";
 import { getActivePlan, saveActivePlan, clearActivePlan, saveGroceryList, clearGroceryList } from "@/lib/mealplan/store";
+import { getCombinedExclusions } from "@/lib/mealplan/pantry";
 import { selectMeals } from "@/lib/mealplan/select";
 import { identifySwapTarget } from "@/lib/anthropic/mealplan";
 import { getRecipes, setRecipes } from "@/lib/recipes/store";
@@ -474,8 +475,8 @@ export async function POST(req: NextRequest) {
         reply = "There's no active meal plan to build a grocery list from. Want me to plan some meals first?";
         break;
       }
-      const groceryRecipes = await getRecipes();
-      const groceryItems = await buildGroceryList(groceryPlan.meals, groceryRecipes, groceryPlan.servings);
+      const [groceryRecipes, groceryExclusions] = await Promise.all([getRecipes(), getCombinedExclusions()]);
+      const groceryItems = await buildGroceryList(groceryPlan.meals, groceryRecipes, groceryPlan.servings, groceryExclusions);
       if (groceryItems.length === 0) {
         reply = "I couldn't parse ingredients from the current plan's recipes. The recipes may be missing an Ingredients section.";
         break;

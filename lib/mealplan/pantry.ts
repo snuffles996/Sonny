@@ -1,4 +1,5 @@
 import { getRedisClient } from "@/lib/redis/client";
+import { getPantryStaples } from "@/lib/pantry/store";
 
 const PANTRY_KEY = "mealplan:shared:pantry_exclusions";
 
@@ -30,6 +31,13 @@ export async function addExclusion(name: string): Promise<string[]> {
   const updated = [...current, normalized];
   await redis.set(PANTRY_KEY, updated);
   return updated;
+}
+
+// Returns the union of the fixed exclusions list and the user-editable
+// pantry staples (pantry:shared). This is what buildGroceryList should use.
+export async function getCombinedExclusions(): Promise<string[]> {
+  const [fixed, userEditable] = await Promise.all([getExclusions(), getPantryStaples()]);
+  return Array.from(new Set([...fixed, ...userEditable]));
 }
 
 export async function removeExclusion(name: string): Promise<string[]> {
