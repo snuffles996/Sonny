@@ -192,7 +192,7 @@ export async function addReminder(listHref: string, title: string): Promise<void
   // Escape special chars per RFC 5545 TEXT rules
   const escapedTitle = title.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,");
 
-  // RFC 5545 §3.4: iCal object MUST end with END:VCALENDAR followed by CRLF
+  // DTSTART required — Apple Reminders app hides VTODOs without a start date
   const ical = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -201,6 +201,7 @@ export async function addReminder(listHref: string, title: string): Promise<void
     "BEGIN:VTODO",
     `UID:${uid}`,
     `DTSTAMP:${stamp}`,
+    `DTSTART;VALUE=DATE:${stamp.slice(0, 8)}`,
     `SUMMARY:${escapedTitle}`,
     "STATUS:NEEDS-ACTION",
     "END:VTODO",
