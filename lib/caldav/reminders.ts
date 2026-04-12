@@ -131,7 +131,7 @@ export async function getOrCreateList(listName: string): Promise<string> {
   );
 }
 
-export async function getExistingItems(listHref: string): Promise<{ uid: string; title: string }[]> {
+export async function getExistingItems(listHref: string): Promise<{ href: string; uid: string; title: string }[]> {
   const url = ensureTrailingSlash(listHref);
   const res = await calFetch(url, "REPORT", {
     Depth: "1",
@@ -150,34 +150,44 @@ export async function getExistingItems(listHref: string): Promise<{ uid: string;
   if (!res.ok && res.status !== 207) return [];
   const text = await res.text();
 
-  const items: { uid: string; title: string }[] = [];
-  const re = /<[A-Za-z0-9]*:?calendar-data[^>]*>([\s\S]*?)<\/[A-Za-z0-9]*:?calendar-data>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const uidMatch = m[1].match(/^UID:(.+)$/m);
-    const summaryMatch = m[1].match(/^SUMMARY:(.+)$/m);
-    const statusMatch = m[1].match(/^STATUS:(.+)$/m);
+  // Parse response blocks so we capture the actual server-side href (which may have %40 etc.)
+  const responseBlocks = text.match(/<[A-Za-z0-9]*:?response[\s\S]*?<\/[A-Za-z0-9]*:?response>/g) ?? [];
+  const items: { href: string; uid: string; title: string }[] = [];
+
+  for (const block of responseBlocks) {
+    const calDataM = block.match(/<[A-Za-z0-9]*:?calendar-data[^>]*>([\s\S]*?)<\/[A-Za-z0-9]*:?calendar-data>/i);
+    if (!calDataM) continue;
+    const calData = calDataM[1];
+    const statusMatch = calData.match(/^STATUS:(.+)$/m);
     // Skip completed reminders — iCloud keeps them in the store but they're not visible
     if (statusMatch?.[1].trim().toUpperCase() === "COMPLETED") continue;
-    if (uidMatch) {
-      items.push({ uid: uidMatch[1].trim(), title: summaryMatch?.[1].trim() ?? "" });
-    }
+    const uidMatch = calData.match(/^UID:(.+)$/m);
+    if (!uidMatch) continue;
+    const hrefM = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i);
+    const title = calData.match(/^SUMMARY:(.+)$/m)?.[1]?.trim() ?? "";
+    items.push({
+      href: hrefM?.[1]?.trim() ?? "",
+      uid: uidMatch[1].trim(),
+      title,
+    });
   }
   return items;
 }
 
 export async function clearList(listHref: string): Promise<void> {
   const items = await getExistingItems(listHref);
+  const base = ensureTrailingSlash(listHref);
   await Promise.all(
     items.map((item) => {
-      const url = `${ensureTrailingSlash(listHref)}${item.uid}.ics`;
-      return calFetch(url, "DELETE", { Authorization: authHeader() }).catch(() => {});
+      // Use the server-provided href (preserves %40 etc.) — not reconstructed from UID
+      const deleteUrl = item.href ? toAbsolute(item.href, base) : `${base}${item.uid}.ics`;
+      return calFetch(deleteUrl, "DELETE", { Authorization: authHeader() }).catch(() => {});
     })
   );
 }
 
 export async function addReminder(listHref: string, title: string): Promise<void> {
-  const uid = `${crypto.randomUUID()}@sonny`;
+  const uid = crypto.randomUUID();
   const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
   // Escape special chars per RFC 5545 TEXT rules
   const escapedTitle = title.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,");
