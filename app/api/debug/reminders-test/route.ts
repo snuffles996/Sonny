@@ -42,8 +42,10 @@ export async function GET(req: NextRequest) {
   const principalXml = await propfindXml(principalUrl, principalPropfind, "0");
 
   // Extract all href values from the principal response
-  const allHrefs = [...principalXml.matchAll(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/gi)]
-    .map(m => m[1].trim());
+  const hrefRe = /<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/gi;
+  const allHrefs: string[] = [];
+  let hrefM: RegExpExecArray | null;
+  while ((hrefM = hrefRe.exec(principalXml)) !== null) allHrefs.push(hrefM[1].trim());
 
   // Step 2: PROPFIND the home with Depth:1 to get all collections
   const collectionPropfind = `<?xml version="1.0" encoding="UTF-8"?>
@@ -62,7 +64,10 @@ export async function GET(req: NextRequest) {
   for (const block of responseBlocks) {
     const href = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i)?.[1]?.trim() ?? "";
     const name = block.match(/<[A-Za-z0-9]*:?displayname[^>]*>([^<]*)<\/[A-Za-z0-9]*:?displayname>/i)?.[1]?.trim() ?? "";
-    const compMatches = [...block.matchAll(/name="([A-Z]+)"/g)].map(m => m[1]);
+    const compRe = /name="([A-Z]+)"/g;
+    const compMatches: string[] = [];
+    let cm: RegExpExecArray | null;
+    while ((cm = compRe.exec(block)) !== null) compMatches.push(cm[1]);
     allCollections.push({ href, name, types: compMatches });
   }
 
@@ -91,7 +96,10 @@ export async function GET(req: NextRequest) {
       continue;
     }
     const reportText = await reportRes.text();
-    const summaries = [...reportText.matchAll(/^SUMMARY:(.+)$/gm)].map(m => m[1].trim());
+    const sumRe = /^SUMMARY:(.+)$/gm;
+    const summaries: string[] = [];
+    let sm: RegExpExecArray | null;
+    while ((sm = sumRe.exec(reportText)) !== null) summaries.push(sm[1].trim());
     const hasTest = summaries.some(s => s.toLowerCase().includes("test"));
     testItemSearch.push({ collection: col.href, name: col.name, found: hasTest, itemCount: summaries.length });
   }
