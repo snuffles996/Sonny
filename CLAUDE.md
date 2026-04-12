@@ -47,7 +47,7 @@ All Haiku calls use **forced tool_use** (tool with `required` input schema + `to
 - Reads: `lib/caldav/events.ts` — `getUpcomingEvents()`, `fetchCalendarIcals()`
 - Writes: `lib/caldav/events.ts` — `createEvent()` via `putCalendarObject()` in client
 - Calendar selection is env-driven: `CALDAV_READ_CALENDARS`, `CALDAV_WRITE_CALENDAR`
-- iCloud Reminders: `lib/caldav/reminders.ts` — reuses `discoverHomeUrl()` from `client.ts` (same `caldav.icloud.com` home, VTODO collections instead of VEVENT). **Do not use `reminders.icloud.com`** — that URL has fragile namespace parsing and was replaced.
+- iCloud Reminders: **not integrated**. Apple's modern personal Reminders lists use CloudKit and are not accessible via CalDAV. The `caldav.icloud.com` endpoint only exposes legacy shared/collaborative lists.
 
 ### Data storage patterns
 
@@ -57,14 +57,13 @@ All Haiku calls use **forced tool_use** (tool with `required` input schema + `to
 | Session turns | `session:{userId}` | `lib/session/kv.ts` |
 | Recipes | `data:recipes` (full array) | `lib/recipes/store.ts` |
 | Active meal plan | `mealplan:shared:active` | `lib/mealplan/store.ts` |
-| Meal plan prefs | `mealplan:shared:prefs` | `lib/mealplan/store.ts` |
+| Grocery list + checks | `mealplan:shared:grocery` | `lib/mealplan/store.ts` |
 | Pantry exclusions | `mealplan:shared:pantry_exclusions` | `lib/mealplan/pantry.ts` |
-| Household items | `mealplan:shared:household_items` | `lib/mealplan/household.ts` |
 | Skin log entries | `skinlog:{userId}` | `lib/skinlog/store.ts` |
 
 All Redis access goes through the `getRedisClient()` singleton in `lib/redis/client.ts` (Upstash, env vars: `KV_REST_API_URL`, `KV_REST_API_TOKEN`).
 
-All stores use a **full-replace pattern**: fetch the current value, merge/update, write back. There are no atomic partial updates. Meal plan and pantry/household keys are shared between users (`shared:`); skin log is per-user.
+All stores use a **full-replace pattern**: fetch the current value, merge/update, write back. There are no atomic partial updates. Meal plan and pantry keys are shared between users (`shared:`); skin log is per-user.
 
 ### Auth
 
@@ -89,11 +88,11 @@ All stores use a **full-replace pattern**: fetch the current value, merge/update
 
 `lib/mealplan/` — full pipeline for the `/mealplan` page:
 - `select.ts` — filters recipes (recency, dietary prefs, cuisine + protein variety caps), shuffles to avoid alphabetical bias, then calls `pickMeals()` for final Sonnet selection
-- `grocery.ts` — parses `## Ingredients` from recipe markdown, scales by per-meal servings, normalizes units, combines duplicates, categorizes. Single-word unit regex only — avoid multi-word greedy patterns that misparse "2 tbsp sour cream".
-- `pantry.ts` — items excluded from the grocery list (oils, butter, staple spices, etc.)
-- `household.ts` — separate non-food items (paper towels, soap, etc.) shown in grocery list but excluded from Reminders by default
+- `grocery.ts` — parses `## Ingredients` from recipe markdown, scales by per-meal servings, normalizes units, combines duplicates, categorizes. Single-word unit regex only — avoid multi-word greedy patterns that misparse "2 tbsp sour cream". Pantry-matched items get category `"Pantry Staples"` (shown in their own section at bottom) rather than being filtered out.
+- `pantry.ts` — the pantry staples list (oils, butter, staple spices, etc.). These are included in the grocery list under a separate "Pantry Staples" section as a stock-check reminder.
+- `store.ts` — also manages the grocery list (`mealplan:shared:grocery`): `getGroceryList()`, `saveGroceryList()`, `toggleGroceryItem()`, `clearGroceryList()`. The grocery list is cleared automatically when the meal plan is cleared or a new plan is saved.
 
-`/api/mealplan/grocery` POST accepts `{ replace, includeHousehold }`. When `includeHousehold=true` the household list is appended to the Reminders push.
+`/api/mealplan/grocery`: GET builds and caches the list (returns `{ items, checkedItems }`), PATCH toggles a checked item (`{ itemName }`), DELETE clears the cache to force a rebuild.
 
 ### Skin log
 
