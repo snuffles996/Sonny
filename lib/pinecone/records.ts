@@ -35,13 +35,26 @@ async function embed(
 function userNamespaces(userId: UserId): string[] {
   const personal =
     userId === "kevin" ? NAMESPACES.kevinNotes : NAMESPACES.kylieNotes;
+  const savedSearch = `${userId}-search`;
   return [
     personal,
+    savedSearch,
     NAMESPACES.sharedRestaurants,
     NAMESPACES.sharedMovies,
     NAMESPACES.sharedRecipes,
     NAMESPACES.sharedTravel,
   ];
+}
+
+// Exported single-text embed helpers for use in other modules
+export async function embedPassage(text: string): Promise<number[]> {
+  const [vector] = await embed([text], "passage");
+  return vector;
+}
+
+export async function embedQuery(text: string): Promise<number[]> {
+  const [vector] = await embed([text], "query");
+  return vector;
 }
 
 export async function saveNote(userId: UserId, text: string): Promise<string> {

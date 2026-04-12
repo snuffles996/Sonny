@@ -42,7 +42,9 @@
       "Bash(python3 -c ':*)",
       "Bash(grep -E \"\\\\.\\(md|json\\)$\")",
       "Bash(node_modules/.bin/tsc --noEmit)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d['version']\\)\")",
+      "Bash(npm view:*)"
     ]
   }
 }

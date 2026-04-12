@@ -25,6 +25,40 @@ import { identifySwapTarget } from "@/lib/anthropic/mealplan";
 import { getRecipes, setRecipes } from "@/lib/recipes/store";
 import { buildGroceryList, formatGroceryListText } from "@/lib/mealplan/grocery";
 import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
+import { searchBooks } from "@/lib/books/search";
+import { searchAudibleLibrary } from "@/lib/books/audible-library";
+import { searchMoviesAndTV } from "@/lib/movies/search";
+import { runWebSearch } from "@/lib/search/webSearch";
+import { decideSave } from "@/lib/search/saveDecision";
+import { saveSearchResult } from "@/lib/search/store";
+import {
+  savePendingRecommender,
+  getPendingRecommender,
+  clearPendingRecommender,
+} from "@/lib/notes/pendingRecommender";
+
+// ── Recommender helpers ───────────────────────────────────────────────────────
+
+function isMediaContent(message: string): boolean {
+  return /\b(book|novel|read|reading|audiobook|movie|film|show|series|tv show|watch|watching|podcast|documentary|album|song|artist|band|listen|recommend)\b/i.test(message);
+}
+
+function extractRecommender(message: string): string | null {
+  const patterns = [
+    /recommended\s+by\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/,
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+recommended/,
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+told\s+me/i,
+    /heard\s+(?:about\s+it\s+)?from\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+said\s+(?:I\s+should|to\s+(?:watch|read))/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+// ── Sports helpers ────────────────────────────────────────────────────────────
 
 // Find the next game for a team within the next `lookaheadDays` days.
 // Returns [game, dateStamp] or null if none found.
@@ -65,11 +99,35 @@ export async function POST(req: NextRequest) {
   let reply: string;
   let saved = false;
 
+  // ── Pending recommender follow-up (intercepts before intent switch) ──────────
+  // If the last response asked "who recommended it?" and the user replied with a
+  // short answer (likely a name), complete the note with the recommender appended.
+  const pendingRec = await getPendingRecommender(userId);
+  if (pendingRec && message.trim().length <= 60) {
+    await clearPendingRecommender(userId);
+    const enrichedText = `${pendingRec.noteText} (Recommended by: ${message.trim()})`;
+    await saveNote(userId, enrichedText);
+    saved = true;
+    reply = `Got it — noted that ${message.trim()} recommended it.`;
+    await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
+    await appendTurn(userId, { role: "assistant", content: reply, timestamp: Date.now() });
+    return NextResponse.json({ reply, intent, saved });
+  }
+  if (pendingRec) await clearPendingRecommender(userId); // stale — long message means new topic
+
   switch (intent) {
     case "save_note": {
       await saveNote(userId, message);
       saved = true;
-      reply = "Got it, saved to your memory.";
+      const recommender = extractRecommender(message);
+      if (recommender) {
+        reply = `Saved — noted that ${recommender} recommended it.`;
+      } else if (isMediaContent(message)) {
+        await savePendingRecommender(userId, message);
+        reply = "Got it, saved. Who recommended it?";
+      } else {
+        reply = "Got it, saved to your memory.";
+      }
       break;
     }
     case "query": {
@@ -421,6 +479,78 @@ export async function POST(req: NextRequest) {
       }
       await clearActivePlan(userId);
       reply = "Meal plan cleared. Want to start a new one?";
+      break;
+    }
+    case "book_search": {
+      try {
+        const books = await searchBooks(message);
+        if (books.length === 0) {
+          reply = "I couldn't find any books matching that. Try a different search term.";
+        } else {
+          reply = await generateResponse(message, profile, recentTurns, [
+            `Google Books results:\n${JSON.stringify(books, null, 2)}`,
+          ]);
+        }
+      } catch (err) {
+        reply = `Book search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      break;
+    }
+    case "audible_library": {
+      try {
+        const books = await searchAudibleLibrary(message);
+        if (books.length === 0) {
+          reply = "I couldn't find a match in your Audible library. Try different keywords, or the library may not be synced yet.";
+        } else {
+          reply = await generateResponse(message, profile, recentTurns, [
+            `Your Audible library matches:\n${JSON.stringify(books, null, 2)}`,
+          ]);
+        }
+      } catch (err) {
+        reply = `Audible library search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      break;
+    }
+    case "movie_query": {
+      try {
+        const titles = await searchMoviesAndTV(message);
+        if (titles.length === 0) {
+          reply = "I couldn't find anything matching that on TMDb.";
+        } else {
+          reply = await generateResponse(message, profile, recentTurns, [
+            `TMDb results:\n${JSON.stringify(titles, null, 2)}`,
+          ]);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        reply = msg.includes("TMDB_API_KEY")
+          ? "Movie search isn't set up yet — add TMDB_API_KEY to your environment variables (free at themoviedb.org/settings/api)."
+          : `Movie search failed: ${msg}`;
+      }
+      break;
+    }
+    case "web_search": {
+      try {
+        const result = await runWebSearch(message, profile, recentTurns);
+        reply = result.responseText || "I couldn't find anything useful for that search.";
+        // Fire-and-forget: decide whether to save — non-critical, don't block response
+        void (async () => {
+          try {
+            const decision = await decideSave(result.query, result.responseText);
+            if (decision.shouldSave) {
+              await saveSearchResult({
+                userId,
+                query: result.query,
+                summary: decision.summary,
+                tags: decision.tags,
+                sourceUrls: result.sourceUrls,
+              });
+            }
+          } catch { /* non-fatal */ }
+        })();
+      } catch (err) {
+        reply = `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
       break;
     }
     default: {

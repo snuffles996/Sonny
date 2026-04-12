@@ -137,6 +137,26 @@ const INGREDIENT_CATEGORIES: Record<string, FoodCategory> = {
   "frozen peas": "Frozen", "frozen corn": "Frozen", "frozen edamame": "Frozen",
 };
 
+// ── Prep-word normalization ───────────────────────────────────────────────────
+
+// Leading descriptors that don't change the core ingredient identity.
+// Strip them so "slivered carrots" and "carrots" group together.
+const PREP_WORDS = new Set([
+  "slivered", "sliced", "diced", "chopped", "minced", "shredded", "grated",
+  "peeled", "halved", "quartered", "trimmed", "julienned", "torn", "crumbled",
+  "cracked", "thinly", "thickly", "finely", "roughly", "coarsely",
+  "fresh", "dried", "large", "medium", "small", "whole",
+  "boneless", "skinless", "lean", "extra",
+]);
+
+function normalizeIngredientName(name: string): string {
+  const words = name.split(/\s+/);
+  while (words.length > 1 && PREP_WORDS.has(words[0])) {
+    words.shift();
+  }
+  return words.join(" ");
+}
+
 // ── Ingredient line parser ─────────────────────────────────────────────────────
 
 interface ParsedIngredient {
@@ -171,10 +191,11 @@ function parseIngredientLine(line: string, recipeSlug: string, recipeName: strin
   }
 
   // Pattern: "qty unit name" — single word for unit to prevent "tablespoons sour" bug
-  const fullMatch = cleaned.match(/^((?:\d+\s+)?\d+(?:[./]\d+)?)\s+([a-zA-Z]+)\s+(.+)$/);
+  // Allow trailing period ("oz.") by using \S+ then stripping punctuation
+  const fullMatch = cleaned.match(/^((?:\d+\s+)?\d+(?:[./]\d+)?)\s+([a-zA-Z]+\.?)\s+(.+)$/);
   if (fullMatch) {
     const qty = parseFraction(fullMatch[1]);
-    const rawUnit = fullMatch[2];
+    const rawUnit = fullMatch[2].replace(/\.$/, ""); // strip trailing period from "oz."
     const nameStr = fullMatch[3].trim();
     const normalized = UNIT_ALIASES[rawUnit];
     if (normalized) {
@@ -384,10 +405,11 @@ export async function buildGroceryList(
     }
   }
 
-  // Group by normalized ingredient name
+  // Group by normalized ingredient name (strips prep adjectives, collapses whitespace)
   const groups = new Map<string, ParsedIngredient[]>();
   for (const ingredient of allIngredients) {
-    const key = ingredient.name.trim().toLowerCase().replace(/\s+/g, " ");
+    const raw = ingredient.name.trim().toLowerCase().replace(/\s+/g, " ");
+    const key = normalizeIngredientName(raw);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(ingredient);
   }

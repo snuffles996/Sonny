@@ -2,7 +2,7 @@
   display: flex;
   border-top: 1px solid #1a1a1a;
   background: #000;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   flex-shrink: 0;
 }
 

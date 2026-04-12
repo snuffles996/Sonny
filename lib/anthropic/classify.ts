@@ -3,6 +3,7 @@ import { getAnthropicClient, FAST_MODEL } from "./client";
 export type Intent =
   | "save_note"
   | "query"
+  | "web_search"
   | "calendar_read"
   | "calendar_write"
   | "profile_update"
@@ -16,11 +17,18 @@ export type Intent =
   | "meal_plan_create"
   | "meal_plan_swap"
   | "meal_plan_grocery"
-  | "meal_plan_clear";
+  | "meal_plan_clear"
+  | "book_search"
+  | "audible_library"
+  | "movie_query";
 
 const INTENT_DESCRIPTIONS = [
-  "save_note: user wants to save, remember, or log something",
-  "query: user is asking a question or requesting information",
+  "save_note: user wants to save, remember, or log something personal to their memory",
+  "query: user is asking about something stored in their personal notes or memory (what they've saved, what they've logged, etc.)",
+  "web_search: user is asking about something in the external world — current events, general knowledge, restaurants or places, health topics, product research, how-to questions, or anything not stored in personal notes",
+  "book_search: user wants to discover or find out about a book, novel, or audiobook — 'find a book about X', 'what should I read next', 'my friend recommended a book'",
+  "audible_library: user is asking about a book they already own in their Audible library — 'that book I have about...', 'find in my audible', 'books I've bought'",
+  "movie_query: user is asking about a movie, TV show, or series — 'what's that movie where...', 'who's in X', 'is X on Netflix', 'recommend a show'",
   "calendar_read: user wants to see upcoming events or check their schedule",
   "calendar_write: user wants to add, change, or remove a calendar event",
   "profile_update: user wants to update their personal preferences or profile info",
@@ -71,6 +79,10 @@ export async function classifyIntent(message: string): Promise<Intent> {
                 "meal_plan_swap",
                 "meal_plan_grocery",
                 "meal_plan_clear",
+                "book_search",
+                "audible_library",
+                "movie_query",
+                "web_search",
               ],
             },
           },
