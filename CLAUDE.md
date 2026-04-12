@@ -99,6 +99,29 @@ All stores use a **full-replace pattern**: fetch the current value, merge/update
 
 `lib/skinlog/` + `/skinlog` page — per-user daily log for tracking topical products, symptoms, and skin condition ratings (1–5). Entries are stored as a flat array in Redis and grouped by date in the UI. Primarily used by Kylie.
 
+### Audible library sync
+
+One-time (and re-run on new purchases) to seed Kevin's Audible library into Pinecone (`kevin-audible` namespace):
+
+1. **Auth** (first time only) — run in Terminal.app (needs interactive input):
+   ```bash
+   /Users/Kevin/Library/Python/3.9/bin/audible-quickstart
+   # country: us, no encryption, external browser login
+   # paste the redirect URL back into the terminal when prompted
+   ```
+
+2. **Export library** — run in Terminal.app (auth lives in `~/.audible/`):
+   ```bash
+   python3 scripts/fetch-audible-library.py > library.json
+   ```
+
+3. **Sync to Pinecone** — can run in Claude Code:
+   ```bash
+   PINECONE_API_KEY=$(grep PINECONE_API_KEY .env.local | cut -d'"' -f2) PINECONE_INDEX_NAME=sonny node scripts/sync-audible.mjs library.json
+   ```
+
+4. Delete `library.json` from the repo root after syncing — it's a temp file.
+
 ### Deployment
 
 Push to `main` → Vercel auto-deploys. Cron job at `app/api/cron/route.ts` runs Monday 8am (configured in `vercel.json`). Environment variables are managed in the Vercel dashboard.
