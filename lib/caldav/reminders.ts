@@ -253,9 +253,9 @@ export async function pushGroceryList(
     titles.push(...householdItems);
   }
 
-  const CHUNK = 5;
-  for (let i = 0; i < titles.length; i += CHUNK) {
-    await Promise.all(titles.slice(i, i + CHUNK).map((t) => addReminder(listHref, t)));
+  // iCloud CalDAV rate-limits concurrent VTODO writes — send sequentially
+  for (const title of titles) {
+    await addReminder(listHref, title);
   }
   return { added: titles.length, listName, existingCount: 0 };
 }
