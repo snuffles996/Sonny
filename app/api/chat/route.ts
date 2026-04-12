@@ -6,6 +6,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { getProfile } from "@/lib/profile/store";
 import { classifyIntent } from "@/lib/anthropic/classify";
+import { handleListWrite, handleListRead } from "@/lib/lists/handler";
+import { addOverride } from "@/lib/lists/overrides";
+import { addStaples, removeStaples, getPantryStaples } from "@/lib/pantry/store";
 import { generateResponse } from "@/lib/anthropic/respond";
 import { getRecentTurns, appendTurn } from "@/lib/session/kv";
 import { saveNote, searchNotes } from "@/lib/pinecone/records";
@@ -89,12 +92,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Load profile, session turns, intent classification, and context search all in parallel
-  const [profile, recentTurns, intent, contextNotes] = await Promise.all([
+  const [profile, recentTurns, classification, contextNotes] = await Promise.all([
     getProfile(userId),
     getRecentTurns(userId),
     classifyIntent(message),
     searchNotes(userId, message), // run speculatively — used if intent is query
   ]);
+  const intent = classification.intent;
 
   let reply: string;
   let saved = false;
@@ -548,6 +552,44 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         reply = `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
       }
+      break;
+    }
+    case "list_write": {
+      reply = await handleListWrite(
+        userId,
+        classification.listName ?? "general",
+        classification.items ?? []
+      );
+      break;
+    }
+    case "list_read": {
+      reply = await handleListRead(userId, classification.listName ?? "general");
+      break;
+    }
+    case "categorization_correction": {
+      if (classification.correctionItem && classification.correctionCategory) {
+        await addOverride(classification.correctionItem, classification.correctionCategory);
+        reply = `Got it — I'll put ${classification.correctionItem} in ${classification.correctionCategory} from now on.`;
+      } else {
+        reply = "I didn't catch which item or category you meant. Can you say it again?";
+      }
+      break;
+    }
+    case "staples_update": {
+      if (classification.staplesAction === "add" && classification.staplesItems?.length) {
+        const updated = await addStaples(classification.staplesItems);
+        reply = `Added to pantry staples: ${classification.staplesItems.join(", ")}. You now have ${updated.length} staples on record.`;
+      } else if (classification.staplesAction === "remove" && classification.staplesItems?.length) {
+        await removeStaples(classification.staplesItems);
+        reply = `Removed from pantry staples: ${classification.staplesItems.join(", ")}.`;
+      } else {
+        reply = "I didn't catch what you wanted to add or remove from staples.";
+      }
+      break;
+    }
+    case "staples_read": {
+      const staples = await getPantryStaples();
+      reply = `Your pantry staples (${staples.length} items):\n${staples.join(", ")}`;
       break;
     }
     default: {

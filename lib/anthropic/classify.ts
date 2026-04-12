@@ -20,7 +20,22 @@ export type Intent =
   | "meal_plan_clear"
   | "book_search"
   | "audible_library"
-  | "movie_query";
+  | "movie_query"
+  | "list_write"
+  | "list_read"
+  | "categorization_correction"
+  | "staples_update"
+  | "staples_read";
+
+export interface ClassificationResult {
+  intent: Intent;
+  listName?: string;
+  items?: string[];
+  staplesAction?: "add" | "remove";
+  staplesItems?: string[];
+  correctionItem?: string;
+  correctionCategory?: string;
+}
 
 const INTENT_DESCRIPTIONS = [
   "save_note: user wants to save, remember, or log something personal to their memory",
@@ -43,20 +58,25 @@ const INTENT_DESCRIPTIONS = [
   "meal_plan_swap: user wants to replace or swap a specific meal in the current plan",
   "meal_plan_grocery: user wants a grocery list, shopping list, or to know what ingredients to buy for their meals",
   "meal_plan_clear: user wants to clear, reset, or start over with the meal plan",
+  "list_write: user wants to add one or more discrete items to a named list. Triggered by: 'add X to my Y list', 'put X on the Costco list', 'I need to grab X', store names (Costco, Target, Trader Joe's, etc.) combined with item nouns. NOT a note. NOT a recipe. Individual buyable or doable items. List intents take priority over save_note or query when a list name or store name appears alongside item-like nouns.",
+  "list_read: user wants to hear back the contents of a named list. Triggered by: 'what's on my X list', 'read me my Costco list', 'show me my grocery list'. NOT triggered by questions about saved notes or memory.",
+  "categorization_correction: user is correcting where an item was categorized. Triggered by: 'X should be in Y', 'X doesn't belong in Y', 'move X to Y', 'X goes in Y not Z'. Extract the item name and the correct category.",
+  "staples_update: user wants to add or remove items from the pantry staples list. Triggered by: 'add X to my staples', 'I always have X', 'X is always in my pantry', 'remove X from staples', 'I'm out of X' (when X is a pantry item). Extract action (add or remove) and items.",
+  "staples_read: user wants to see the pantry staples list. Triggered by: 'what are my staples', 'show me my pantry staples', 'what do I always have'.",
 ].join("\n");
 
-export async function classifyIntent(message: string): Promise<Intent> {
+export async function classifyIntent(message: string): Promise<ClassificationResult> {
   const client = getAnthropicClient();
 
   const response = await client.messages.create({
     model: FAST_MODEL,
-    max_tokens: 64,
+    max_tokens: 256,
     system: `Classify the user's message into exactly one intent.\n\nIntents:\n${INTENT_DESCRIPTIONS}`,
     messages: [{ role: "user", content: message }],
     tools: [
       {
         name: "classify_intent",
-        description: "Return the intent of the user message",
+        description: "Return the intent of the user message and any associated data",
         input_schema: {
           type: "object" as const,
           properties: {
@@ -83,7 +103,39 @@ export async function classifyIntent(message: string): Promise<Intent> {
                 "audible_library",
                 "movie_query",
                 "web_search",
+                "list_write",
+                "list_read",
+                "categorization_correction",
+                "staples_update",
+                "staples_read",
               ],
+            },
+            listName: {
+              type: "string",
+              description: "Normalized lowercase list name. Map store names to canonical form: 'costco run' → 'costco', 'grocery list' → 'grocery', 'trader joes' → 'traderjoes'. Always lowercase, no spaces.",
+            },
+            items: {
+              type: "array",
+              items: { type: "string" },
+              description: "Individual items to add for list_write. Each item should be a clean noun phrase: 'paper towels', 'olive oil'.",
+            },
+            staplesAction: {
+              type: "string",
+              enum: ["add", "remove"],
+              description: "Whether to add or remove from pantry staples. Only for staples_update.",
+            },
+            staplesItems: {
+              type: "array",
+              items: { type: "string" },
+              description: "Items to add or remove from pantry staples. Only for staples_update.",
+            },
+            correctionItem: {
+              type: "string",
+              description: "The item being recategorized. Only for categorization_correction.",
+            },
+            correctionCategory: {
+              type: "string",
+              description: "The correct category for the item. Only for categorization_correction.",
             },
           },
           required: ["intent"],
@@ -94,6 +146,6 @@ export async function classifyIntent(message: string): Promise<Intent> {
   });
 
   const toolUse = response.content.find((b) => b.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") return "query";
-  return (toolUse.input as { intent: Intent }).intent;
+  if (!toolUse || toolUse.type !== "tool_use") return { intent: "query" };
+  return toolUse.input as ClassificationResult;
 }
