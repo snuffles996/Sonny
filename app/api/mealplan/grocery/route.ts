@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     const result = await pushGroceryList(items, userId, mode, householdItems);
 
     if (result.existingCount > 0 && mode === "replace") {
-      return NextResponse.json({ existingCount: result.existingCount, listName: result.listName });
+      return NextResponse.json({ existingCount: result.existingCount, listName: result.listName, existingTitles: result.existingTitles });
     }
 
     plan.groceryListSent = true;

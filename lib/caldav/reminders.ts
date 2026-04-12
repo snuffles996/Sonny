@@ -208,6 +208,7 @@ export interface PushResult {
   added: number;
   listName: string;
   existingCount: number;
+  existingTitles?: string[];
 }
 
 export async function pushGroceryList(
@@ -223,14 +224,15 @@ export async function pushGroceryList(
   const existing = await getExistingItems(listHref);
 
   if (mode === "replace" && existing.length > 0) {
-    return { added: 0, listName, existingCount: existing.length };
+    return { added: 0, listName, existingCount: existing.length, existingTitles: existing.map((i) => i.title) };
   }
 
   if (mode === "force_replace" && existing.length > 0) {
     await clearList(listHref);
   }
 
-  const titles = items.map((item) => `${item.name} — ${item.displayQty}`);
+  // Use ASCII colon separator — iCloud CalDAV 500s on multi-byte chars like em-dash in SUMMARY
+  const titles = items.map((item) => `${item.name}: ${item.displayQty}`);
   if (householdItems.length > 0) {
     titles.push(...householdItems);
   }
