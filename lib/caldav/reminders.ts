@@ -40,6 +40,12 @@ function decodeEntities(s: string): string {
 
 // ── List discovery ────────────────────────────────────────────────────────────
 
+// iCloud appends ⚠️ to shared list displayNames in CalDAV responses.
+// Strip it so name lookups work regardless of sharing state.
+function normalizeListName(name: string): string {
+  return name.replace(/[\u26A0\uFE0F\s]+$/, "").trim();
+}
+
 async function listReminderLists(): Promise<{ url: string; displayName: string }[]> {
   const homeUrl = await discoverHomeUrl();
 
@@ -69,12 +75,12 @@ async function listReminderLists(): Promise<{ url: string; displayName: string }
     if (!block.includes("VTODO")) continue;
     const href = extractHref(block);
     if (!href) continue;
-    const name = decodeEntities(
+    const rawName = decodeEntities(
       block.match(/<[A-Za-z0-9]*:?displayname[^>]*>([^<]*)<\/[A-Za-z0-9]*:?displayname>/i)?.[1]?.trim() ?? ""
     );
     lists.push({
       url: ensureTrailingSlash(toAbsolute(href, homeUrl)),
-      displayName: name,
+      displayName: normalizeListName(rawName),
     });
   }
   return lists;
