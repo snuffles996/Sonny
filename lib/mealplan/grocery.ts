@@ -26,6 +26,7 @@ export interface GroceryItem {
 // ── Unit normalization tables ─────────────────────────────────────────────────
 
 const UNIT_ALIASES: Record<string, string> = {
+  // Long forms
   tablespoon: "tbsp", tablespoons: "tbsp", tbsps: "tbsp", tb: "tbsp",
   teaspoon: "tsp", teaspoons: "tsp", tsps: "tsp",
   cup: "cup", cups: "cup",
@@ -35,6 +36,9 @@ const UNIT_ALIASES: Record<string, string> = {
   kilogram: "kg", kilograms: "kg",
   milliliter: "ml", milliliters: "ml", millilitre: "ml", millilitres: "ml",
   liter: "l", liters: "l", litre: "l", litres: "l",
+  // Short forms (recipes commonly use these directly)
+  tbsp: "tbsp", tsp: "tsp", oz: "oz", lb: "lb",
+  g: "g", kg: "kg", ml: "ml",
   clove: "clove", cloves: "clove",
   slice: "slice", slices: "slice",
   can: "can", cans: "can",

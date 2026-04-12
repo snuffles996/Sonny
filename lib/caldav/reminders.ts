@@ -150,6 +150,9 @@ export async function getExistingItems(listHref: string): Promise<{ uid: string;
   while ((m = re.exec(text)) !== null) {
     const uidMatch = m[1].match(/^UID:(.+)$/m);
     const summaryMatch = m[1].match(/^SUMMARY:(.+)$/m);
+    const statusMatch = m[1].match(/^STATUS:(.+)$/m);
+    // Skip completed reminders — iCloud keeps them in the store but they're not visible
+    if (statusMatch?.[1].trim().toUpperCase() === "COMPLETED") continue;
     if (uidMatch) {
       items.push({ uid: uidMatch[1].trim(), title: summaryMatch?.[1].trim() ?? "" });
     }
@@ -186,7 +189,6 @@ export async function addReminder(listHref: string, title: string): Promise<void
   const url = `${ensureTrailingSlash(listHref)}${uid}.ics`;
   const res = await calFetch(url, "PUT", {
     "Content-Type": "text/calendar; charset=utf-8",
-    "If-None-Match": "*",
   }, ical);
 
   if (!res.ok) {
