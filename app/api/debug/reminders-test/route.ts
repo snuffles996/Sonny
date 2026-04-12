@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
     const uid = calData.match(/^UID:(.+)$/m)?.[1]?.trim() ?? "";
     const summary = calData.match(/^SUMMARY:(.+)$/m)?.[1]?.trim() ?? "";
     const status = calData.match(/^STATUS:(.+)$/m)?.[1]?.trim() ?? "NONE";
-    existingItems.push({ href: hrefM?.[1]?.trim() ?? "", uid, summary, status });
+    existingItems.push({ href: hrefM?.[1]?.trim() ?? "", uid, summary, status, rawCalData: calData.trim() });
   }
 
   // Test 1: PUT with uuid@sonny format (actual addReminder format)
