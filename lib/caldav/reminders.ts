@@ -82,16 +82,19 @@ async function listReminderLists(): Promise<{ url: string; displayName: string }
 
 export async function getOrCreateList(listName: string): Promise<string> {
   const lists = await listReminderLists();
-  const existing = lists.find((l) => l.displayName.toLowerCase() === listName.toLowerCase());
-  if (existing) return existing.url;
 
-  // Create a new VTODO collection
+  // Exact name match
+  const exact = lists.find((l) => l.displayName.toLowerCase() === listName.toLowerCase());
+  if (exact) return exact.url;
+
+  // Try MKCALENDAR (correct CalDAV method for creating calendar collections).
+  // iCloud often blocks this with 403 — we handle that gracefully below.
   const homeUrl = await discoverHomeUrl();
   const slug = listName.toLowerCase().replace(/[^a-z0-9]/g, "-");
   const newUrl = ensureTrailingSlash(`${ensureTrailingSlash(homeUrl)}${slug}`);
 
-  const mkcolXml = `<?xml version="1.0" encoding="UTF-8"?>
-<d:mkcol xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  const mkXml = `<?xml version="1.0" encoding="UTF-8"?>
+<c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:set>
     <d:prop>
       <d:displayname>${listName}</d:displayname>
@@ -100,13 +103,26 @@ export async function getOrCreateList(listName: string): Promise<string> {
       </c:supported-calendar-component-set>
     </d:prop>
   </d:set>
-</d:mkcol>`;
+</c:mkcalendar>`;
 
-  const mkRes = await calFetch(newUrl, "MKCOL", { "Content-Type": "application/xml; charset=utf-8" }, mkcolXml);
-  if (!mkRes.ok && mkRes.status !== 405) {
-    throw new Error(`Could not create Reminders list "${listName}": ${mkRes.status}`);
+  const mkRes = await calFetch(newUrl, "MKCALENDAR", { "Content-Type": "application/xml; charset=utf-8" }, mkXml);
+
+  if (mkRes.ok || mkRes.status === 405 /* already exists */) {
+    return newUrl;
   }
-  return newUrl;
+
+  // iCloud blocks Reminders list creation via CalDAV (returns 403).
+  // Fall back to the first available Reminders list so the push still works,
+  // or tell the user to create the list manually if none exist at all.
+  if (lists.length > 0) {
+    console.warn(`[reminders] Could not create list "${listName}" (${mkRes.status}), falling back to "${lists[0].displayName}"`);
+    return lists[0].url;
+  }
+
+  throw new Error(
+    `Could not create a Reminders list and no existing lists were found. ` +
+    `Open the Reminders app and create a list called "${listName}", then try again.`
+  );
 }
 
 export async function getExistingItems(listHref: string): Promise<{ uid: string; title: string }[]> {
