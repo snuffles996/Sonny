@@ -75,6 +75,10 @@ const FOLK_UNITS = new Set([
   "dash", "splash",
 ]);
 
+// Words that appear as a "unit" in some recipe formats but mean "each" / "count".
+// e.g. "1 unit lime", "2 each scallions" — strip the word and treat as unitless.
+const COUNT_WORDS = new Set(["unit", "units", "each"]);
+
 const VOLUME_TO_ML: Record<string, number> = {
   tsp: 5, tbsp: 15, cup: 240, ml: 1, l: 1000,
 };
@@ -217,6 +221,10 @@ function parseIngredientLine(line: string, recipeSlug: string, recipeName: strin
     const normalized = aliases[rawUnit];
     if (normalized) {
       return { qty, unit: normalized, isFolkUnit: FOLK_UNITS.has(normalized), name: nameStr, recipeSlug, recipeName };
+    }
+    // "unit", "units", "each" — meaningless count words, treat as unitless
+    if (COUNT_WORDS.has(rawUnit.toLowerCase())) {
+      return { qty, unit: null, isFolkUnit: false, name: nameStr, recipeSlug, recipeName };
     }
     // First word isn't a known unit — treat it as part of the ingredient name
     return { qty, unit: null, isFolkUnit: false, name: `${rawUnit} ${nameStr}`, recipeSlug, recipeName };
