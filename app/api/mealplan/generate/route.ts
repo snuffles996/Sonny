@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { getRecipes } from "@/lib/recipes/store";
 import { getProfile } from "@/lib/profile/store";
-import { getActivePlan, saveActivePlan } from "@/lib/mealplan/store";
+import { getActivePlan, saveActivePlan, clearGroceryList } from "@/lib/mealplan/store";
 import { selectMeals } from "@/lib/mealplan/select";
 import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
 
@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
     updatedBy: userId,
     meals,
     servings,
-    groceryListSent: false,
   };
 
   await saveActivePlan(plan);
+  await clearGroceryList();
   return NextResponse.json({ plan });
 }

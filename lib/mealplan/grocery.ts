@@ -13,7 +13,8 @@ export type FoodCategory =
   | "Canned & Jarred"
   | "Frozen"
   | "Beverages"
-  | "Other";
+  | "Other"
+  | "Pantry Staples";
 
 export interface GroceryItem {
   name: string;
@@ -418,16 +419,15 @@ export async function buildGroceryList(
     groups.get(key)!.push(ingredient);
   }
 
-  // Apply pantry exclusions (exact name match)
-  if (exclusions.length > 0) {
-    const exclusionSet = new Set(exclusions.map((e) => e.toLowerCase().trim()));
-    for (const key of Array.from(groups.keys())) {
-      if (exclusionSet.has(key)) groups.delete(key);
-    }
+  // Identify pantry staples (shown in own section at bottom, not excluded)
+  const pantrySet = new Set(exclusions.map((e) => e.toLowerCase().trim()));
+  const pantryKeys = new Set<string>();
+  for (const key of Array.from(groups.keys())) {
+    if (pantrySet.has(key)) pantryKeys.add(key);
   }
 
-  // Categorize remaining ingredients
-  const names = Array.from(groups.keys());
+  // Categorize non-pantry ingredients only
+  const names = Array.from(groups.keys()).filter((k) => !pantryKeys.has(k));
   const categories = await categorizeIngredients(names);
 
   // Build final list
@@ -438,7 +438,7 @@ export async function buildGroceryList(
     items.push({
       name: name.charAt(0).toUpperCase() + name.slice(1),
       displayQty,
-      category: categories[name] ?? "Other",
+      category: pantryKeys.has(name) ? "Pantry Staples" : (categories[name] ?? "Other"),
       sourceRecipes,
       hasMultipleSources: sourceRecipes.length > 1,
     });

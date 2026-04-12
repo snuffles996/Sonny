@@ -32,17 +32,11 @@ export default function MealPlanPage() {
 
   // Grocery
   const [groceryItems, setGroceryItems] = useState<GroceryItem[] | null>(null);
-  const [buildingGrocery, setBuildingGrocery] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [confirmReplace, setConfirmReplace] = useState<{ existingCount: number; listName: string } | null>(null);
+  const [checkedItems, setCheckedItems] = useState<string[]>([]);
+  const [rebuilding, setRebuilding] = useState(false);
 
   // Pantry exclusions
   const [exclusions, setExclusions] = useState<string[]>([]);
-
-  // Household items
-  const [householdItems, setHouseholdItems] = useState<string[]>([]);
-  const [includeHousehold, setIncludeHousehold] = useState(false);
 
   // Modals
   const [checkOffMeal, setCheckOffMeal] = useState<PlannedMeal | null>(null);
@@ -63,13 +57,16 @@ export default function MealPlanPage() {
       fetch("/api/mealplan", { headers }).then((r) => r.json()),
       fetch("/api/recipes", { headers }).then((r) => r.json()),
       fetch("/api/mealplan/exclusions", { headers }).then((r) => r.json()),
-      fetch("/api/mealplan/household", { headers }).then((r) => r.json()),
+      fetch("/api/mealplan/grocery", { headers }).then((r) => r.json()),
     ])
-      .then(([planData, recipeData, exclusionData, householdData]) => {
+      .then(([planData, recipeData, exclusionData, groceryData]) => {
         setPlan(planData.plan ?? null);
         setRecipes(recipeData.recipes ?? []);
         setExclusions(exclusionData.exclusions ?? []);
-        setHouseholdItems(householdData.items ?? []);
+        if (groceryData.items) {
+          setGroceryItems(groceryData.items);
+          setCheckedItems(groceryData.checkedItems ?? []);
+        }
       })
       .finally(() => setLoading(false));
   }, [token]);
@@ -100,10 +97,7 @@ export default function MealPlanPage() {
       body: JSON.stringify({ slug, servings }),
     });
     const data = await res.json();
-    if (data.plan) {
-      setPlan(data.plan);
-      setGroceryItems(null); // stale — rebuild required after servings change
-    }
+    if (data.plan) setPlan(data.plan);
   }
 
   async function handleSwap(slug: string, replacementSlug: string) {
@@ -116,6 +110,9 @@ export default function MealPlanPage() {
     const data = await res.json();
     if (data.plan) setPlan(data.plan);
     setSwapMeal(null);
+    // Grocery list is stale after a swap — clear it so it rebuilds
+    setGroceryItems(null);
+    setCheckedItems([]);
   }
 
   async function handleClear() {
@@ -126,44 +123,38 @@ export default function MealPlanPage() {
     });
     setPlan(null);
     setGroceryItems(null);
+    setCheckedItems([]);
     setConfirmClear(false);
   }
 
-  async function handleBuildGrocery() {
+  async function handleToggleItem(itemName: string) {
     if (!token) return;
-    setBuildingGrocery(true);
+    const res = await fetch("/api/mealplan/grocery", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ itemName }),
+    });
+    const data = await res.json();
+    if (data.checkedItems) setCheckedItems(data.checkedItems);
+  }
+
+  async function handleRebuild() {
+    if (!token) return;
+    setRebuilding(true);
+    // Clear the cache, then re-fetch (GET will rebuild)
+    await fetch("/api/mealplan/grocery", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const res = await fetch("/api/mealplan/grocery", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    if (data.items) setGroceryItems(data.items);
-    setBuildingGrocery(false);
-  }
-
-  async function handleSendToReminders(replace = false, includeHousehold = false) {
-    if (!token || !groceryItems) return;
-    setSending(true);
-    setSendError(null);
-    setConfirmReplace(null);
-    try {
-      const res = await fetch("/api/mealplan/grocery", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ replace, includeHousehold }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSendError(data.error ?? "Failed to send to Reminders.");
-      } else if (data.existingCount > 0 && !replace) {
-        setConfirmReplace({ existingCount: data.existingCount, listName: data.listName });
-      } else if (data.added !== undefined) {
-        setPlan((p) => (p ? { ...p, groceryListSent: true } : p));
-      }
-    } catch {
-      setSendError("Connection error. Try again.");
-    } finally {
-      setSending(false);
+    if (data.items) {
+      setGroceryItems(data.items);
+      setCheckedItems(data.checkedItems ?? []);
     }
+    setRebuilding(false);
   }
 
   async function handleAddExclusion(name: string) {
@@ -268,37 +259,19 @@ export default function MealPlanPage() {
             </div>
           ) : !groceryItems ? (
             <div className={styles.buildPrompt}>
-              <p className={styles.buildText}>
-                {plan.groceryListSent ? "Grocery list was already sent to Reminders." : "Ready to build your shopping list."}
-              </p>
-              <button className={styles.buildButton} onClick={handleBuildGrocery} disabled={buildingGrocery}>
-                {buildingGrocery ? "Building…" : "Build Grocery List"}
+              <p className={styles.buildText}>Ready to build your shopping list.</p>
+              <button className={styles.buildButton} onClick={handleRebuild} disabled={rebuilding}>
+                {rebuilding ? "Building…" : "Build Shopping List"}
               </button>
             </div>
           ) : (
             <div className={styles.groceryWrap}>
-              {plan.groceryListSent && !confirmReplace && (
-                <p className={styles.sentBadge}>Sent to Reminders</p>
-              )}
-              {sendError && (
-                <p className={styles.sendError}>{sendError}</p>
-              )}
-              {confirmReplace && (
-                <div className={styles.confirmBanner}>
-                  &ldquo;{confirmReplace.listName}&rdquo; already has {confirmReplace.existingCount} items. Replace them?
-                  <div className={styles.confirmActions}>
-                    <button className={styles.confirmBtn} onClick={() => setConfirmReplace(null)}>Cancel</button>
-                    <button className={`${styles.confirmBtn} ${styles.primary}`} onClick={() => handleSendToReminders(true, includeHousehold)}>Replace</button>
-                  </div>
-                </div>
-              )}
               <GroceryList
                 items={groceryItems}
-                householdItems={householdItems}
-                includeHousehold={includeHousehold}
-                onToggleHousehold={() => setIncludeHousehold((v) => !v)}
-                onSendToReminders={() => handleSendToReminders(false, includeHousehold)}
-                sending={sending}
+                checkedItems={checkedItems}
+                onToggleItem={handleToggleItem}
+                onRebuild={handleRebuild}
+                rebuilding={rebuilding}
               />
               <PantryExclusions
                 exclusions={exclusions}
@@ -320,7 +293,7 @@ export default function MealPlanPage() {
         <PlanMealsModal
           token={token}
           onClose={() => setShowPlanModal(false)}
-          onGenerated={(newPlan) => { setPlan(newPlan); setShowPlanModal(false); }}
+          onGenerated={(newPlan) => { setPlan(newPlan); setShowPlanModal(false); setGroceryItems(null); setCheckedItems([]); }}
         />
       )}
       {swapMeal && (

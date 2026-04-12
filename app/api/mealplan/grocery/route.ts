@@ -1,14 +1,14 @@
-// GET  — build and return grocery items for the active plan
-// POST — push grocery items to iCloud Reminders
+// GET   — return grocery list (builds and caches if needed)
+// PATCH — toggle a checked item
+// DELETE — clear the cached list (triggers rebuild on next GET)
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
-import { getActivePlan, saveActivePlan } from "@/lib/mealplan/store";
+import { getActivePlan } from "@/lib/mealplan/store";
+import { getGroceryList, saveGroceryList, toggleGroceryItem, clearGroceryList } from "@/lib/mealplan/store";
 import { getRecipes } from "@/lib/recipes/store";
 import { buildGroceryList } from "@/lib/mealplan/grocery";
-import { pushGroceryList } from "@/lib/caldav/reminders";
 import { getExclusions } from "@/lib/mealplan/pantry";
-import { getHouseholdItems } from "@/lib/mealplan/household";
 
 export async function GET(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -17,41 +17,32 @@ export async function GET(req: NextRequest) {
   const plan = await getActivePlan();
   if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
 
+  // Return cached list if available
+  const cached = await getGroceryList();
+  if (cached) return NextResponse.json({ items: cached.items, checkedItems: cached.checkedItems });
+
+  // Build and cache
   const [recipes, exclusions] = await Promise.all([getRecipes(), getExclusions()]);
   const items = await buildGroceryList(plan.meals, recipes, plan.servings, exclusions);
-  return NextResponse.json({ items });
+  await saveGroceryList(items);
+  return NextResponse.json({ items, checkedItems: [] });
 }
 
-export async function POST(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
   const userId = authenticateUser(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({})) as { replace?: boolean; includeHousehold?: boolean };
-  const mode = body.replace ? "force_replace" : "replace";
+  const body = await req.json().catch(() => null) as { itemName?: string } | null;
+  if (!body?.itemName) return NextResponse.json({ error: "itemName required" }, { status: 400 });
 
-  const plan = await getActivePlan();
-  if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
+  const checkedItems = await toggleGroceryItem(body.itemName);
+  return NextResponse.json({ checkedItems });
+}
 
-  const [recipes, exclusions, householdItems] = await Promise.all([
-    getRecipes(),
-    getExclusions(),
-    body.includeHousehold ? getHouseholdItems() : Promise.resolve([]),
-  ]);
+export async function DELETE(req: NextRequest) {
+  const userId = authenticateUser(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  try {
-    const items = await buildGroceryList(plan.meals, recipes, plan.servings, exclusions);
-    const result = await pushGroceryList(items, userId, mode, householdItems);
-
-    if (result.existingCount > 0 && mode === "replace") {
-      return NextResponse.json({ existingCount: result.existingCount, listName: result.listName, existingTitles: result.existingTitles });
-    }
-
-    plan.groceryListSent = true;
-    await saveActivePlan(plan);
-
-    return NextResponse.json({ added: result.added, listName: result.listName });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to push to Reminders";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  await clearGroceryList();
+  return NextResponse.json({ ok: true });
 }

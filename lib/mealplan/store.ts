@@ -1,14 +1,16 @@
 import { getRedisClient } from "@/lib/redis/client";
 import type { UserId } from "@/lib/profile/types";
-import type { MealPlan, MealPlanPrefs } from "./types";
+import type { MealPlan } from "./types";
+import type { GroceryItem } from "./grocery";
 
 const ACTIVE_KEY = "mealplan:shared:active";
 const HISTORY_KEY = "mealplan:shared:history";
-const PREFS_KEY = "mealplan:shared:prefs";
+const GROCERY_KEY = "mealplan:shared:grocery";
 
-const DEFAULT_PREFS: MealPlanPrefs = {
-  defaultRemindersListName: "Grocery List",
-};
+interface StoredGrocery {
+  items: GroceryItem[];
+  checkedItems: string[];
+}
 
 export async function getActivePlan(): Promise<MealPlan | null> {
   const redis = getRedisClient();
@@ -29,6 +31,7 @@ export async function clearActivePlan(userId: UserId): Promise<void> {
     await redis.set(HISTORY_KEY, history);
   }
   await redis.del(ACTIVE_KEY);
+  await redis.del(GROCERY_KEY);
 }
 
 export async function getPlanHistory(): Promise<MealPlan[]> {
@@ -36,14 +39,32 @@ export async function getPlanHistory(): Promise<MealPlan[]> {
   return (await redis.get<MealPlan[]>(HISTORY_KEY)) ?? [];
 }
 
-export async function getPrefs(): Promise<MealPlanPrefs> {
+// ── Grocery list ──────────────────────────────────────────────────────────────
+
+export async function getGroceryList(): Promise<StoredGrocery | null> {
   const redis = getRedisClient();
-  const stored = await redis.get<MealPlanPrefs>(PREFS_KEY);
-  return stored ?? DEFAULT_PREFS;
+  return redis.get<StoredGrocery>(GROCERY_KEY);
 }
 
-export async function savePrefs(updates: Partial<MealPlanPrefs>): Promise<void> {
+export async function saveGroceryList(items: GroceryItem[]): Promise<void> {
   const redis = getRedisClient();
-  const current = await getPrefs();
-  await redis.set(PREFS_KEY, { ...current, ...updates });
+  const current = await redis.get<StoredGrocery>(GROCERY_KEY);
+  await redis.set(GROCERY_KEY, { items, checkedItems: current?.checkedItems ?? [] });
+}
+
+export async function toggleGroceryItem(itemName: string): Promise<string[]> {
+  const redis = getRedisClient();
+  const stored = await redis.get<StoredGrocery>(GROCERY_KEY);
+  if (!stored) return [];
+  const checked = stored.checkedItems ?? [];
+  const updated = checked.includes(itemName)
+    ? checked.filter((n) => n !== itemName)
+    : [...checked, itemName];
+  await redis.set(GROCERY_KEY, { ...stored, checkedItems: updated });
+  return updated;
+}
+
+export async function clearGroceryList(): Promise<void> {
+  const redis = getRedisClient();
+  await redis.del(GROCERY_KEY);
 }

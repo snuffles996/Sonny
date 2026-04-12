@@ -19,7 +19,7 @@ import { addRecipe } from "@/lib/recipes/store";
 import { detectTeam, findGame, getScore, getSchedule, getStandings, getPlayerStats, getBulkSchedule, detectDivision, addHours } from "@/lib/sports/lookup";
 import { parseDateRange } from "@/lib/anthropic/daterange";
 import { extractSportsQuery } from "@/lib/anthropic/sports";
-import { getActivePlan, saveActivePlan, clearActivePlan } from "@/lib/mealplan/store";
+import { getActivePlan, saveActivePlan, clearActivePlan, saveGroceryList, clearGroceryList } from "@/lib/mealplan/store";
 import { selectMeals } from "@/lib/mealplan/select";
 import { identifySwapTarget } from "@/lib/anthropic/mealplan";
 import { getRecipes, setRecipes } from "@/lib/recipes/store";
@@ -398,9 +398,9 @@ export async function POST(req: NextRequest) {
         updatedBy: userId,
         meals: planMeals,
         servings: defaultServings,
-        groceryListSent: false,
       };
       await saveActivePlan(newPlan);
+      await clearGroceryList();
 
       const lines = suggestions.map((s, i) => {
         const meta = [s.recipe.cuisine, s.recipe.totalTime].filter(Boolean).join(", ");
@@ -446,6 +446,7 @@ export async function POST(req: NextRequest) {
       swapPlan.updatedAt = new Date().toISOString();
       swapPlan.updatedBy = userId;
       await saveActivePlan(swapPlan);
+      await clearGroceryList();
       reply = `Swapped **${oldName}** for **${newMeal.recipe.name}**. ${newMeal.reason}`;
       break;
     }
@@ -461,14 +462,10 @@ export async function POST(req: NextRequest) {
         reply = "I couldn't parse ingredients from the current plan's recipes. The recipes may be missing an Ingredients section.";
         break;
       }
-      // Mark grocery list as sent and update the plan
-      groceryPlan.groceryListSent = true;
-      groceryPlan.updatedAt = new Date().toISOString();
-      groceryPlan.updatedBy = userId;
-      await saveActivePlan(groceryPlan);
+      await saveGroceryList(groceryItems);
 
       const listText = formatGroceryListText(groceryItems);
-      reply = `Here's your grocery list for ${groceryPlan.meals.length} meal${groceryPlan.meals.length !== 1 ? "s" : ""} (${groceryPlan.servings} servings each):\n\n${listText}\n\nSay "send to Reminders" to push this to your iCloud Reminders list.`;
+      reply = `Here's your grocery list for ${groceryPlan.meals.length} meal${groceryPlan.meals.length !== 1 ? "s" : ""} (${groceryPlan.servings} servings each):\n\n${listText}`;
       break;
     }
     case "meal_plan_clear": {

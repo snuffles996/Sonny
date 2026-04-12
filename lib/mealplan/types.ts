@@ -17,9 +17,4 @@ export interface MealPlan {
   updatedBy: UserId;
   meals: PlannedMeal[];
   servings: number;        // default servings for this plan
-  groceryListSent: boolean;
-}
-
-export interface MealPlanPrefs {
-  defaultRemindersListName: string; // iCloud Reminders list to push grocery items to
 }

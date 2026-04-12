@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
-import { getActivePlan, saveActivePlan, clearActivePlan } from "@/lib/mealplan/store";
+import { getActivePlan, saveActivePlan, clearActivePlan, clearGroceryList } from "@/lib/mealplan/store";
 import { getRecipes, setRecipes } from "@/lib/recipes/store";
 import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
 
@@ -32,9 +32,9 @@ export async function POST(req: NextRequest) {
     updatedBy: userId,
     meals,
     servings: servings ?? parseInt(process.env.DEFAULT_SERVINGS ?? "2", 10),
-    groceryListSent: false,
   };
   await saveActivePlan(plan);
+  await clearGroceryList();
   return NextResponse.json({ plan });
 }
 
@@ -94,6 +94,7 @@ export async function PATCH(req: NextRequest) {
       addedBy: userId,
       made: false,
     };
+    await clearGroceryList();
   }
 
   plan.updatedAt = new Date().toISOString();
