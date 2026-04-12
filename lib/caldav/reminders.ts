@@ -173,18 +173,23 @@ export async function clearList(listHref: string): Promise<void> {
 export async function addReminder(listHref: string, title: string): Promise<void> {
   const uid = `${crypto.randomUUID()}@sonny`;
   const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
+  // Escape special chars per RFC 5545 TEXT rules
+  const escapedTitle = title.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,");
+
+  // RFC 5545 §3.4: iCal object MUST end with END:VCALENDAR followed by CRLF
   const ical = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
     "PRODID:-//Sonny//Personal AI//EN",
     "BEGIN:VTODO",
     `UID:${uid}`,
     `DTSTAMP:${stamp}`,
-    `SUMMARY:${title}`,
+    `SUMMARY:${escapedTitle}`,
     "STATUS:NEEDS-ACTION",
     "END:VTODO",
     "END:VCALENDAR",
-  ].join("\r\n");
+  ].join("\r\n") + "\r\n";
 
   const url = `${ensureTrailingSlash(listHref)}${uid}.ics`;
   const res = await calFetch(url, "PUT", {
@@ -192,7 +197,8 @@ export async function addReminder(listHref: string, title: string): Promise<void
   }, ical);
 
   if (!res.ok) {
-    throw new Error(`Failed to add reminder "${title}": ${res.status}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`Failed to add reminder "${title}": ${res.status} — ${body.slice(0, 300)}`);
   }
 }
 
