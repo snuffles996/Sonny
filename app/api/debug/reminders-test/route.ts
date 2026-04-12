@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
 
   const reportText = await reportRes.text();
   const responseBlocks = reportText.match(/<[A-Za-z0-9]*:?response[\s\S]*?<\/[A-Za-z0-9]*:?response>/g) ?? [];
-  const existingItems: { href: string; uid: string; summary: string; status: string }[] = [];
+  const existingItems: { href: string; uid: string; summary: string; status: string; rawCalData: string }[] = [];
 
   for (const block of responseBlocks) {
     const hrefM = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i);
