@@ -47,7 +47,7 @@ All Haiku calls use **forced tool_use** (tool with `required` input schema + `to
 - Reads: `lib/caldav/events.ts` — `getUpcomingEvents()`, `fetchCalendarIcals()`
 - Writes: `lib/caldav/events.ts` — `createEvent()` via `putCalendarObject()` in client
 - Calendar selection is env-driven: `CALDAV_READ_CALENDARS`, `CALDAV_WRITE_CALENDAR`
-- iCloud Reminders use the same protocol at `reminders.icloud.com` with VTODO instead of VEVENT
+- iCloud Reminders: `lib/caldav/reminders.ts` — reuses `discoverHomeUrl()` from `client.ts` (same `caldav.icloud.com` home, VTODO collections instead of VEVENT). **Do not use `reminders.icloud.com`** — that URL has fragile namespace parsing and was replaced.
 
 ### Data storage patterns
 
@@ -58,10 +58,13 @@ All Haiku calls use **forced tool_use** (tool with `required` input schema + `to
 | Recipes | `data:recipes` (full array) | `lib/recipes/store.ts` |
 | Active meal plan | `mealplan:shared:active` | `lib/mealplan/store.ts` |
 | Meal plan prefs | `mealplan:shared:prefs` | `lib/mealplan/store.ts` |
+| Pantry exclusions | `mealplan:shared:pantry_exclusions` | `lib/mealplan/pantry.ts` |
+| Household items | `mealplan:shared:household_items` | `lib/mealplan/household.ts` |
+| Skin log entries | `skinlog:{userId}` | `lib/skinlog/store.ts` |
 
 All Redis access goes through the `getRedisClient()` singleton in `lib/redis/client.ts` (Upstash, env vars: `KV_REST_API_URL`, `KV_REST_API_TOKEN`).
 
-Recipe and profile stores use a **full-replace pattern**: fetch the current value, merge/update, write back. There are no atomic partial updates.
+All stores use a **full-replace pattern**: fetch the current value, merge/update, write back. There are no atomic partial updates. Meal plan and pantry/household keys are shared between users (`shared:`); skin log is per-user.
 
 ### Auth
 
@@ -81,6 +84,20 @@ Recipe and profile stores use a **full-replace pattern**: fetch the current valu
 - CSS Modules per page/component, no Tailwind (despite SETUP.md — it was not used)
 - Client components use `"use client"` + Bearer token stored in `localStorage`
 - `components/BottomNav.tsx` drives tab navigation — add new tabs to the `TABS` array
+
+### Meal planning
+
+`lib/mealplan/` — full pipeline for the `/mealplan` page:
+- `select.ts` — filters recipes (recency, dietary prefs, cuisine + protein variety caps), shuffles to avoid alphabetical bias, then calls `pickMeals()` for final Sonnet selection
+- `grocery.ts` — parses `## Ingredients` from recipe markdown, scales by per-meal servings, normalizes units, combines duplicates, categorizes. Single-word unit regex only — avoid multi-word greedy patterns that misparse "2 tbsp sour cream".
+- `pantry.ts` — items excluded from the grocery list (oils, butter, staple spices, etc.)
+- `household.ts` — separate non-food items (paper towels, soap, etc.) shown in grocery list but excluded from Reminders by default
+
+`/api/mealplan/grocery` POST accepts `{ replace, includeHousehold }`. When `includeHousehold=true` the household list is appended to the Reminders push.
+
+### Skin log
+
+`lib/skinlog/` + `/skinlog` page — per-user daily log for tracking topical products, symptoms, and skin condition ratings (1–5). Entries are stored as a flat array in Redis and grouped by date in the UI. Primarily used by Kylie.
 
 ### Deployment
 
