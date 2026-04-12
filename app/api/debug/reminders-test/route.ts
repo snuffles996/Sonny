@@ -1,14 +1,8 @@
-// Temporary debug endpoint — test Reminders PUT and show existing items
+// Temporary debug endpoint — find real Reminders home by searching for Test item
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
-import { calFetch, authHeader, discoverHomeUrl } from "@/lib/caldav/client";
+import { calFetch, discoverHomeUrl } from "@/lib/caldav/client";
 
-function decodeEntities(s: string): string {
-  return s.replace(/&amp;/g, "&").replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-}
-function normalizeListName(name: string): string {
-  return name.replace(/[\u26A0\uFE0F\s]+$/, "").trim();
-}
 function toAbsolute(href: string, base: string): string {
   if (href.startsWith("http")) return href;
   const u = new URL(base);
@@ -18,55 +12,73 @@ function ensureTrailingSlash(url: string): string {
   return url.endsWith("/") ? url : url + "/";
 }
 
+async function propfindXml(url: string, body: string, depth = "1"): Promise<string> {
+  const res = await calFetch(url, "PROPFIND", {
+    Depth: depth,
+    "Content-Type": "application/xml; charset=utf-8",
+    Accept: "application/xml",
+  }, body);
+  return res.text();
+}
+
 export async function GET(req: NextRequest) {
   const userId = authenticateUser(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const homeUrl = await discoverHomeUrl();
 
-  // List all VTODO collections
-  const listRes = await calFetch(homeUrl, "PROPFIND", {
-    Depth: "1",
-    "Content-Type": "application/xml; charset=utf-8",
-    Accept: "application/xml",
-  }, `<?xml version="1.0" encoding="UTF-8"?>
+  // Step 1: PROPFIND on the principal URL to find ALL home sets
+  const principalPropfind = `<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop><d:displayname/><d:resourcetype/><c:supported-calendar-component-set/></d:prop>
-</d:propfind>`);
+  <d:prop>
+    <c:calendar-home-set/>
+    <d:displayname/>
+    <d:principal-URL/>
+  </d:prop>
+</d:propfind>`;
 
-  const listText = await listRes.text();
-  const blocks = listText.match(/<[A-Za-z0-9]*:?response[\s\S]*?<\/[A-Za-z0-9]*:?response>/g) ?? [];
-  const vtodoLists: { href: string; rawName: string; normalizedName: string; url: string }[] = [];
+  // Principal URL is one level up from the home
+  const principalUrl = homeUrl.replace(/\/calendars\/$/, "/");
+  const principalXml = await propfindXml(principalUrl, principalPropfind, "0");
 
-  for (const block of blocks) {
-    if (!block.includes("VTODO")) continue;
-    const hrefM = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i);
-    if (!hrefM) continue;
-    const href = hrefM[1].trim();
-    const rawName = decodeEntities(
-      block.match(/<[A-Za-z0-9]*:?displayname[^>]*>([^<]*)<\/[A-Za-z0-9]*:?displayname>/i)?.[1]?.trim() ?? ""
-    );
-    vtodoLists.push({
-      href,
-      rawName,
-      normalizedName: normalizeListName(rawName),
-      url: ensureTrailingSlash(toAbsolute(href, homeUrl)),
-    });
+  // Extract all href values from the principal response
+  const allHrefs = [...principalXml.matchAll(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/gi)]
+    .map(m => m[1].trim());
+
+  // Step 2: PROPFIND the home with Depth:1 to get all collections
+  const collectionPropfind = `<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:displayname/>
+    <d:resourcetype/>
+    <c:supported-calendar-component-set/>
+  </d:prop>
+</d:propfind>`;
+
+  const homeXml = await propfindXml(homeUrl, collectionPropfind, "1");
+  const responseBlocks = homeXml.match(/<[A-Za-z0-9]*:?response[\s\S]*?<\/[A-Za-z0-9]*:?response>/g) ?? [];
+
+  const allCollections: { href: string; name: string; types: string[] }[] = [];
+  for (const block of responseBlocks) {
+    const href = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i)?.[1]?.trim() ?? "";
+    const name = block.match(/<[A-Za-z0-9]*:?displayname[^>]*>([^<]*)<\/[A-Za-z0-9]*:?displayname>/i)?.[1]?.trim() ?? "";
+    const compMatches = [...block.matchAll(/name="([A-Z]+)"/g)].map(m => m[1]);
+    allCollections.push({ href, name, types: compMatches });
   }
 
-  const groceryList = vtodoLists.find(l => l.normalizedName.toLowerCase() === "grocery list");
-  if (!groceryList) {
-    return NextResponse.json({ homeUrl, vtodoLists, groceryList: null });
-  }
+  // Step 3: REPORT each VTODO collection looking for the "Test" item
+  const vtodoCollections = allCollections.filter(c => c.types.includes("VTODO"));
+  const testItemSearch: { collection: string; name: string; found: boolean; itemCount: number }[] = [];
 
-  // Get existing items with their actual hrefs (not reconstructed from UID)
-  const reportRes = await calFetch(groceryList.url, "REPORT", {
-    Depth: "1",
-    "Content-Type": "application/xml; charset=utf-8",
-    Accept: "application/xml",
-  }, `<?xml version="1.0" encoding="UTF-8"?>
+  for (const col of vtodoCollections) {
+    const url = ensureTrailingSlash(toAbsolute(col.href, homeUrl));
+    const reportRes = await calFetch(url, "REPORT", {
+      Depth: "1",
+      "Content-Type": "application/xml; charset=utf-8",
+      Accept: "application/xml",
+    }, `<?xml version="1.0" encoding="UTF-8"?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop><d:getetag/><d:href/><c:calendar-data/></d:prop>
+  <d:prop><c:calendar-data/></d:prop>
   <c:filter>
     <c:comp-filter name="VCALENDAR">
       <c:comp-filter name="VTODO"/>
@@ -74,60 +86,22 @@ export async function GET(req: NextRequest) {
   </c:filter>
 </c:calendar-query>`);
 
-  const reportText = await reportRes.text();
-  const responseBlocks = reportText.match(/<[A-Za-z0-9]*:?response[\s\S]*?<\/[A-Za-z0-9]*:?response>/g) ?? [];
-  const existingItems: { href: string; uid: string; summary: string; status: string; rawCalData: string }[] = [];
-
-  for (const block of responseBlocks) {
-    const hrefM = block.match(/<[A-Za-z0-9]*:?href[^>]*>([^<]+)<\/[A-Za-z0-9]*:?href>/i);
-    const calDataM = block.match(/<[A-Za-z0-9]*:?calendar-data[^>]*>([\s\S]*?)<\/[A-Za-z0-9]*:?calendar-data>/i);
-    if (!calDataM) continue;
-    const calData = calDataM[1];
-    const uid = calData.match(/^UID:(.+)$/m)?.[1]?.trim() ?? "";
-    const summary = calData.match(/^SUMMARY:(.+)$/m)?.[1]?.trim() ?? "";
-    const status = calData.match(/^STATUS:(.+)$/m)?.[1]?.trim() ?? "NONE";
-    existingItems.push({ href: hrefM?.[1]?.trim() ?? "", uid, summary, status, rawCalData: calData.trim() });
-  }
-
-  // Test 1: PUT with uuid@sonny format (actual addReminder format)
-  const uid1 = `${crypto.randomUUID()}@sonny`;
-  const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
-  const ical1 = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "CALSCALE:GREGORIAN",
-    "PRODID:-//Sonny//Personal AI//EN",
-    "BEGIN:VTODO",
-    `UID:${uid1}`,
-    `DTSTAMP:${stamp}`,
-    "SUMMARY:Cheddar-jack cheese: 4 oz",
-    "STATUS:NEEDS-ACTION",
-    "END:VTODO",
-    "END:VCALENDAR",
-  ].join("\r\n") + "\r\n";
-
-  const putUrl1 = `${groceryList.url}${uid1}.ics`;
-  const putRes1 = await calFetch(putUrl1, "PUT", { "Content-Type": "text/calendar; charset=utf-8" }, ical1);
-  const putBody1 = await putRes1.text().catch(() => "");
-  if (putRes1.ok || putRes1.status === 201) {
-    await calFetch(putUrl1, "DELETE", { Authorization: authHeader() }).catch(() => {});
-  }
-
-  // Test 2: PUT with plain uuid (no @sonny)
-  const uid2 = crypto.randomUUID();
-  const ical2 = ical1.replace(`UID:${uid1}`, `UID:${uid2}`);
-  const putUrl2 = `${groceryList.url}${uid2}.ics`;
-  const putRes2 = await calFetch(putUrl2, "PUT", { "Content-Type": "text/calendar; charset=utf-8" }, ical2);
-  const putBody2 = await putRes2.text().catch(() => "");
-  if (putRes2.ok || putRes2.status === 201) {
-    await calFetch(putUrl2, "DELETE", { Authorization: authHeader() }).catch(() => {});
+    if (!reportRes.ok && reportRes.status !== 207) {
+      testItemSearch.push({ collection: col.href, name: col.name, found: false, itemCount: -1 });
+      continue;
+    }
+    const reportText = await reportRes.text();
+    const summaries = [...reportText.matchAll(/^SUMMARY:(.+)$/gm)].map(m => m[1].trim());
+    const hasTest = summaries.some(s => s.toLowerCase().includes("test"));
+    testItemSearch.push({ collection: col.href, name: col.name, found: hasTest, itemCount: summaries.length });
   }
 
   return NextResponse.json({
     homeUrl,
-    groceryList,
-    existingItems,
-    putTestAtSonny: { url: putUrl1, status: putRes1.status, ok: putRes1.ok, body: putBody1.slice(0, 500) },
-    putTestPlainUuid: { url: putUrl2, status: putRes2.status, ok: putRes2.ok, body: putBody2.slice(0, 500) },
+    principalUrl,
+    principalHrefs: allHrefs,
+    allCollections,
+    vtodoCollections: vtodoCollections.length,
+    testItemSearch,
   });
 }
