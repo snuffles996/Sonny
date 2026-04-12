@@ -197,6 +197,12 @@ function parseFraction(s: string): number {
   return parseFloat(s);
 }
 
+const UNICODE_FRACTIONS: Record<string, string> = {
+  "¼": "1/4", "½": "1/2", "¾": "3/4",
+  "⅓": "1/3", "⅔": "2/3",
+  "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+};
+
 function parseIngredientLine(line: string, recipeSlug: string, recipeName: string, aliases: Record<string, string>): ParsedIngredient {
   // Strip bullet, trailing asterisks/footnote markers, parenthetical notes
   const cleaned = line
@@ -204,6 +210,8 @@ function parseIngredientLine(line: string, recipeSlug: string, recipeName: strin
     .replace(/\s*\([^)]*\)/g, "")  // strip "(about 1 cup)" style notes
     .replace(/\*+$/, "")            // strip trailing asterisks like "butter*"
     .replace(/,\s*$/, "")           // strip trailing comma
+    .replace(/[¼½¾⅓⅔⅛⅜⅝⅞]/g, (c) => UNICODE_FRACTIONS[c] ?? c) // "¼" → "1/4"
+    .replace(/(\d)([a-zA-Z])/g, "$1 $2")  // "2tbsp" → "2 tbsp"
     .trim()
     .toLowerCase();
 
