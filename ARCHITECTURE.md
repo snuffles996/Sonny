@@ -266,7 +266,7 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 
 | Script | Purpose |
 |---|---|
-| `scripts/sync-audible.mjs` | Sync Audible library JSON → Redis `library:kevin:books` (upserts by ASIN; never overwrites user-set fields; infers `finished` from 100% progress) |
+| `scripts/sync-audible.mjs` | Sync Audible library JSON → Redis `library:kevin:books` (upserts by ASIN; never overwrites user-set fields; all new books default to `status: "shelf"` — Audible API does not expose listening progress) |
 | `scripts/fetch-audible-library.py` | Export Audible library to JSON (requires `audible-quickstart` auth) |
 | `scripts/normalize-recipe-units.mjs` | Normalize unit names in all stored recipes — unicode fractions, fl oz, long-form units. Run with `--dry-run` first. |
 | `scripts/import-vault.mjs` | One-time import of notes from an Obsidian vault |
