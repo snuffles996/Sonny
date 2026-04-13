@@ -8,6 +8,9 @@ import { getProfile } from "@/lib/profile/store";
 import { classifyIntent } from "@/lib/anthropic/classify";
 import { handleListWrite, handleListRead } from "@/lib/lists/handler";
 import { addOverride } from "@/lib/lists/overrides";
+import { addToListIndex } from "@/lib/lists/index";
+import { searchUserLists } from "@/lib/lists/search";
+import { addItemToList, isGroceryList, enrichmentSourceForList } from "@/lib/lists/addItem";
 import { addStaples, removeStaples, getPantryStaples } from "@/lib/pantry/store";
 import { generateResponse } from "@/lib/anthropic/respond";
 import { getRecentTurns, appendTurn } from "@/lib/session/kv";
@@ -92,12 +95,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "message required" }, { status: 400 });
   }
 
-  // Load profile, session turns, intent classification, and context search all in parallel
-  const [profile, recentTurns, classification, contextNotes] = await Promise.all([
+  // Load profile, session turns, intent classification, context search, and list search all in parallel
+  const [profile, recentTurns, classification, contextNotes, listContext] = await Promise.all([
     getProfile(userId),
     getRecentTurns(userId),
     classifyIntent(message),
-    searchNotes(userId, message), // run speculatively — used if intent is query
+    searchNotes(userId, message),       // speculative — used if intent is query
+    searchUserLists(userId, message),   // speculative — injected alongside memory
   ]);
   const intent = classification.intent;
 
@@ -136,7 +140,7 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "query": {
-      reply = await generateResponse(message, profile, recentTurns, contextNotes);
+      reply = await generateResponse(message, profile, recentTurns, contextNotes, listContext);
       break;
     }
     case "calendar_read": {
@@ -570,11 +574,27 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "list_write": {
-      reply = await handleListWrite(
-        userId,
-        classification.listName ?? "general",
-        classification.items ?? []
-      );
+      const listName = classification.listName ?? "general";
+      const items = classification.items ?? [];
+      if (isGroceryList(listName)) {
+        // Grocery lists: keep the categorize-and-confirm flow
+        reply = await handleListWrite(userId, listName, items);
+        await addToListIndex(userId, listName);
+      } else if (items.length === 1) {
+        // Non-grocery, single item: try enrichment
+        const result = await addItemToList({
+          userId,
+          listName,
+          itemName: items[0],
+          itemType: enrichmentSourceForList(listName) === "tmdb" ? "show/movie" : "other",
+          enrichmentSource: enrichmentSourceForList(listName),
+        });
+        reply = result.reply;
+      } else {
+        // Non-grocery, multiple items: write all, skip per-item enrichment
+        reply = await handleListWrite(userId, listName, items);
+        await addToListIndex(userId, listName);
+      }
       break;
     }
     case "list_read": {

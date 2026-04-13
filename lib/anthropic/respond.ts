@@ -56,7 +56,8 @@ export async function generateResponse(
   message: string,
   profile: UserProfile,
   recentTurns: Turn[],
-  contextNotes: string[]
+  contextNotes: string[],
+  listContext?: string | null
 ): Promise<string> {
   const client = getAnthropicClient();
 
@@ -64,11 +65,14 @@ export async function generateResponse(
     ...recentTurns.map((t) => ({ role: t.role, content: t.content })),
   ];
 
-  // Append retrieved notes as context before the user message
-  const userContent =
-    contextNotes.length > 0
-      ? `${message}\n\n<memory>\n${contextNotes.join("\n---\n")}\n</memory>`
-      : message;
+  // Append retrieved context before the user message
+  let userContent = message;
+  if (contextNotes.length > 0) {
+    userContent += `\n\n<memory>\n${contextNotes.join("\n---\n")}\n</memory>`;
+  }
+  if (listContext) {
+    userContent += `\n\n<lists>\n${listContext}\n</lists>`;
+  }
 
   messages.push({ role: "user", content: userContent });
 
