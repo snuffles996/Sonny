@@ -9,6 +9,7 @@ export interface BookResult {
   pageCount?: number;
   categories?: string[];
   isbn?: string;
+  coverUrl?: string;
   audibleSearchUrl: string;
   googleBooksUrl: string;
 }
@@ -34,6 +35,7 @@ export async function searchBooks(query: string, maxResults = 5): Promise<BookRe
     const authors: string[] = info.authors ?? [];
     const searchTerm = encodeURIComponent(`${title} ${authors[0] ?? ""}`);
 
+    const thumbRaw: string | undefined = info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail;
     return {
       title,
       authors,
@@ -42,6 +44,7 @@ export async function searchBooks(query: string, maxResults = 5): Promise<BookRe
       pageCount: info.pageCount,
       categories: info.categories,
       isbn: info.industryIdentifiers?.find((id: { type: string }) => id.type === "ISBN_13")?.identifier,
+      coverUrl: thumbRaw ? thumbRaw.replace("http://", "https://") : undefined,
       audibleSearchUrl: `https://www.audible.com/search?keywords=${searchTerm}`,
       googleBooksUrl: info.infoLink ?? "",
     };

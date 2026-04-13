@@ -58,6 +58,7 @@
   height: 100dvh;
   max-width: 680px;
   margin: 0 auto;
+  padding-bottom: var(--nav-height);
 }
 
 .messages {

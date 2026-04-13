@@ -191,7 +191,27 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "query": {
-      reply = await generateResponse(message, profile, recentTurns, contextNotes, listContext);
+      // Search structured book library — fast Redis read, injects as context if matches found
+      const allBooks = await getBooks(userId);
+      const q = message.toLowerCase();
+      const bookMatches = allBooks.filter((b) => {
+        const words = b.title.toLowerCase().split(/\W+/).filter((w) => w.length >= 4);
+        return words.length > 0 && words.some((w) => q.includes(w));
+      });
+      const queryContext = contextNotes ? [...contextNotes] : [];
+      if (bookMatches.length > 0) {
+        queryContext.push(`Books from your library that may be relevant:\n${JSON.stringify(bookMatches, null, 2)}`);
+        cards = bookMatches.slice(0, 3).map((b): ChatCard => ({
+          type: "book",
+          title: b.title,
+          subtitle: `by ${b.author}`,
+          coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
+          status: b.status,
+          inLibrary: true,
+          actions: [],
+        }));
+      }
+      reply = await generateResponse(message, profile, recentTurns, queryContext, listContext);
       break;
     }
     case "calendar_read": {
@@ -566,7 +586,7 @@ export async function POST(req: NextRequest) {
           ]);
           cards = results.slice(0, 3).map((r): ChatCard => {
             const inLib = !!findBookByTitle(library, r.title);
-            const coverUrl = r.isbn ? `https://covers.openlibrary.org/b/isbn/${r.isbn}-M.jpg` : undefined;
+            const coverUrl = r.coverUrl ?? (r.isbn ? `https://covers.openlibrary.org/b/isbn/${r.isbn}-M.jpg` : undefined);
             return {
               type: "book",
               title: r.title,
@@ -611,6 +631,15 @@ export async function POST(req: NextRequest) {
           reply = await generateResponse(message, profile, recentTurns, [
             `Your Audible library matches:\n${JSON.stringify(redisMatches, null, 2)}`,
           ]);
+          cards = redisMatches.slice(0, 3).map((b): ChatCard => ({
+            type: "book",
+            title: b.title,
+            subtitle: `by ${b.author}`,
+            coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
+            status: b.status,
+            inLibrary: true,
+            actions: [],
+          }));
         } else {
           // Fall back to Pinecone (legacy — shrinks as Redis store fills)
           const books = await searchAudibleLibrary(message);
@@ -690,7 +719,7 @@ export async function POST(req: NextRequest) {
           const top = searchResults[i][0];
           if (!top) { notFound.push(titles[i]); continue; }
           const isbn = top.isbn;
-          const coverUrl = isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined;
+          const coverUrl = top.coverUrl ?? (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined);
           const book: Book = {
             id: makeBookId(),
             title: top.title,

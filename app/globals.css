@@ -1,3 +1,7 @@
+:root {
+  --nav-height: calc(60px + env(safe-area-inset-bottom) + 10px);
+}
+
 * {
   box-sizing: border-box;
   padding: 0;

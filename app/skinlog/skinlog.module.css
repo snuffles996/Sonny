@@ -35,6 +35,7 @@
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
+  padding-bottom: var(--nav-height);
 }
 
 .content::-webkit-scrollbar { display: none; }
