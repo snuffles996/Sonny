@@ -10,7 +10,7 @@ export interface Turn {
   timestamp: number;
 }
 
-const MAX_TURNS = 5;
+const MAX_TURNS = 10;
 const SESSION_TTL = 60 * 60 * 4; // 4 hours
 
 function sessionKey(userId: UserId): string {
