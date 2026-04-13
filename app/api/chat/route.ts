@@ -532,6 +532,20 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "movie_query": {
+      // If this looks like "I want to watch X", route to watchlist instead of lookup
+      const wantToWatch = message.match(/\bI\s+want\s+to\s+watch\s+(.+?)(?:\s+by\s+.+)?$/i);
+      if (wantToWatch) {
+        const itemName = wantToWatch[1].replace(/\s+by\s+.+$/i, "").trim();
+        const result = await addItemToList({
+          userId,
+          listName: "watchlist",
+          itemName,
+          itemType: "show/movie",
+          enrichmentSource: "tmdb",
+        });
+        reply = result.reply;
+        break;
+      }
       try {
         const titles = await searchMoviesAndTV(message);
         if (titles.length === 0) {
