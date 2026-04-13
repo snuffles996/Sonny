@@ -476,6 +476,12 @@
   margin-bottom: 0.75rem;
 }
 
+.headerActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .selectBtn {
   background: none;
   border: 1px solid #2a2a2a;
@@ -484,6 +490,7 @@
   padding: 4px 10px;
   border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .selectBtn:active {

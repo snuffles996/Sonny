@@ -343,9 +343,25 @@ export default function BooksPage() {
       <div className={styles.header}>
         <div className={styles.headerRow}>
           <h1 className={styles.title}>Books</h1>
-          <button className={styles.selectBtn} onClick={toggleSelectMode}>
-            {selectMode ? "Cancel" : "Select"}
-          </button>
+          <div className={styles.headerActions}>
+            {selectMode && (
+              <button
+                className={styles.selectBtn}
+                onClick={() => {
+                  if (selectedIds.size === sorted.length) {
+                    setSelectedIds(new Set());
+                  } else {
+                    setSelectedIds(new Set(sorted.map((b) => b.id)));
+                  }
+                }}
+              >
+                {selectedIds.size === sorted.length ? "Deselect all" : "Select all"}
+              </button>
+            )}
+            <button className={styles.selectBtn} onClick={toggleSelectMode}>
+              {selectMode ? "Cancel" : "Select"}
+            </button>
+          </div>
         </div>
         <input
           className={styles.search}
