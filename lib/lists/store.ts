@@ -67,3 +67,11 @@ export async function clearList(
   const redis = getRedisClient();
   await redis.del(listKey(userId, listName));
 }
+
+// Returns all list names the user has created (scans list:{userId}:* keys).
+export async function getAllListNames(userId: string): Promise<string[]> {
+  const redis = getRedisClient();
+  const prefix = `list:${userId}:`;
+  const keys = await redis.keys(`${prefix}*`);
+  return keys.map((k) => k.slice(prefix.length)).sort();
+}

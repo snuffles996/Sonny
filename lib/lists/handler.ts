@@ -1,4 +1,4 @@
-import { getList, addItems } from "@/lib/lists/store";
+import { getList, addItems, getAllListNames } from "@/lib/lists/store";
 import { categorizeItems } from "@/lib/lists/categorize";
 
 export async function handleListWrite(
@@ -46,8 +46,15 @@ export async function handleListWrite(
 
 export async function handleListRead(
   userId: string,
-  listName: string
+  listName: string | undefined
 ): Promise<string> {
+  // No specific list requested — show all lists the user has
+  if (!listName) {
+    const names = await getAllListNames(userId);
+    if (!names.length) return "You don't have any lists yet. Ask me to add something to a list to get started.";
+    return `You have ${names.length} list${names.length !== 1 ? "s" : ""}: ${names.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join(", ")}. Ask me to show you any one of them.`;
+  }
+
   const items = await getList(userId, listName);
   const listLabel = listName.charAt(0).toUpperCase() + listName.slice(1);
 

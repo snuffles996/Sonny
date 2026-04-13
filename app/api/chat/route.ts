@@ -578,7 +578,7 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "list_read": {
-      reply = await handleListRead(userId, classification.listName ?? "general");
+      reply = await handleListRead(userId, classification.listName);
       break;
     }
     case "categorization_correction": {
