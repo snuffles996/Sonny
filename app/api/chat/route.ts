@@ -34,7 +34,13 @@ import { buildGroceryList, formatGroceryListText } from "@/lib/mealplan/grocery"
 import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
 import { searchBooks } from "@/lib/books/search";
 import { searchAudibleLibrary } from "@/lib/books/audible-library";
+import { getBooks, addBook, updateBook } from "@/lib/books/store";
 import { searchMoviesAndTV } from "@/lib/movies/search";
+import { getMovies, addMovie, updateMovie } from "@/lib/movies/store";
+import { extractBookUpdate, extractMovieUpdate } from "@/lib/anthropic/library";
+import type { ChatCard } from "@/lib/types/cards";
+import type { Book } from "@/lib/books/types";
+import type { Movie } from "@/lib/movies/types";
 import { runWebSearch } from "@/lib/search/webSearch";
 import { decideSave } from "@/lib/search/saveDecision";
 import { saveSearchResult } from "@/lib/search/store";
@@ -84,6 +90,49 @@ async function findNextGame(message: string, lookaheadDays = 7) {
   return null;
 }
 
+// ── Library helpers ───────────────────────────────────────────────────────────
+
+function makeBookId(): string {
+  return `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function makeMovieId(): string {
+  return `movie-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function normalizeTitle(t: string): string {
+  return t.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function findBookByTitle(books: Book[], title: string): Book | undefined {
+  const norm = normalizeTitle(title);
+  return books.find((b) => normalizeTitle(b.title).includes(norm) || norm.includes(normalizeTitle(b.title)));
+}
+
+function findMovieByTitle(movies: Movie[], title: string): Movie | undefined {
+  const norm = normalizeTitle(title);
+  return movies.find((m) => normalizeTitle(m.title).includes(norm) || norm.includes(normalizeTitle(m.title)));
+}
+
+async function fetchStreamingProviders(tmdbId: number, type: "movie" | "tv"): Promise<string[]> {
+  try {
+    const url = new URL(`https://api.themoviedb.org/3/${type}/${tmdbId}/watch/providers`);
+    url.searchParams.set("api_key", process.env.TMDB_API_KEY!);
+    const res = await fetch(url.toString());
+    if (!res.ok) return [];
+    const data = await res.json();
+    const us = data.results?.US;
+    if (!us) return [];
+    const providers = new Set<string>();
+    for (const s of [...(us.flatrate ?? []), ...(us.free ?? [])]) {
+      providers.add((s as { provider_name: string }).provider_name);
+    }
+    return Array.from(providers);
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(req: NextRequest) {
   const userId = authenticateUser(req);
   if (!userId) {
@@ -108,6 +157,7 @@ export async function POST(req: NextRequest) {
 
   let reply: string;
   let saved = false;
+  let cards: ChatCard[] | undefined;
 
   // ── Pending recommender follow-up (intercepts before intent switch) ──────────
   // If the last response asked "who recommended it?" and the user replied with a
@@ -121,7 +171,7 @@ export async function POST(req: NextRequest) {
     reply = `Got it — noted that ${message.trim()} recommended it.`;
     await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
     await appendTurn(userId, { role: "assistant", content: reply, timestamp: Date.now() });
-    return NextResponse.json({ reply, intent, saved });
+    return NextResponse.json({ reply, intent, saved });  // no cards on recommender follow-up
   }
   if (pendingRec) await clearPendingRecommender(userId); // stale — long message means new topic
 
@@ -504,13 +554,41 @@ export async function POST(req: NextRequest) {
     }
     case "book_search": {
       try {
-        const books = await searchBooks(message);
-        if (books.length === 0) {
+        const [results, library] = await Promise.all([
+          searchBooks(message),
+          getBooks(userId),
+        ]);
+        if (results.length === 0) {
           reply = "I couldn't find any books matching that. Try a different search term.";
         } else {
           reply = await generateResponse(message, profile, recentTurns, [
-            `Google Books results:\n${JSON.stringify(books, null, 2)}`,
+            `Google Books results:\n${JSON.stringify(results, null, 2)}`,
           ]);
+          cards = results.slice(0, 3).map((r): ChatCard => {
+            const inLib = !!findBookByTitle(library, r.title);
+            const coverUrl = r.isbn ? `https://covers.openlibrary.org/b/isbn/${r.isbn}-M.jpg` : undefined;
+            return {
+              type: "book",
+              title: r.title,
+              subtitle: r.authors.length > 0 ? `by ${r.authors[0]}` : "",
+              coverUrl,
+              inLibrary: inLib,
+              actions: inLib ? [] : [{
+                label: "+ Add to library",
+                action: "add_book",
+                payload: {
+                  id: makeBookId(),
+                  title: r.title,
+                  author: r.authors[0] ?? "Unknown",
+                  isbn: r.isbn,
+                  coverUrl,
+                  status: "want_to_read",
+                  source: "other",
+                  dateAdded: new Date().toISOString().slice(0, 10),
+                } satisfies Partial<Book>,
+              }],
+            };
+          });
         }
       } catch (err) {
         reply = `Book search failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -519,13 +597,30 @@ export async function POST(req: NextRequest) {
     }
     case "audible_library": {
       try {
-        const books = await searchAudibleLibrary(message);
-        if (books.length === 0) {
-          reply = "I couldn't find a match in your Audible library. Try different keywords, or the library may not be synced yet.";
-        } else {
+        // Check structured Redis store first (populated by updated sync script)
+        const library = await getBooks(userId);
+        const q = message.toLowerCase();
+        const redisMatches = library.filter(
+          (b) => b.source === "audible" && (
+            b.title.toLowerCase().includes(q) ||
+            b.author.toLowerCase().includes(q) ||
+            (b.series ?? "").toLowerCase().includes(q)
+          )
+        );
+        if (redisMatches.length > 0) {
           reply = await generateResponse(message, profile, recentTurns, [
-            `Your Audible library matches:\n${JSON.stringify(books, null, 2)}`,
+            `Your Audible library matches:\n${JSON.stringify(redisMatches, null, 2)}`,
           ]);
+        } else {
+          // Fall back to Pinecone (legacy — shrinks as Redis store fills)
+          const books = await searchAudibleLibrary(message);
+          if (books.length === 0) {
+            reply = "I couldn't find a match in your Audible library. Try different keywords, or the library may not be synced yet.";
+          } else {
+            reply = await generateResponse(message, profile, recentTurns, [
+              `Your Audible library matches:\n${JSON.stringify(books, null, 2)}`,
+            ]);
+          }
         }
       } catch (err) {
         reply = `Audible library search failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -533,28 +628,43 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "movie_query": {
-      // If this looks like "I want to watch X", route to watchlist instead of lookup
-      const wantToWatch = message.match(/\bI\s+want\s+to\s+watch\s+(.+?)(?:\s+by\s+.+)?$/i);
-      if (wantToWatch) {
-        const itemName = wantToWatch[1].replace(/\s+by\s+.+$/i, "").trim();
-        const result = await addItemToList({
-          userId,
-          listName: "watchlist",
-          itemName,
-          itemType: "show/movie",
-          enrichmentSource: "tmdb",
-        });
-        reply = result.reply;
-        break;
-      }
       try {
-        const titles = await searchMoviesAndTV(message);
-        if (titles.length === 0) {
+        const [results, library] = await Promise.all([
+          searchMoviesAndTV(message),
+          getMovies(),
+        ]);
+        if (results.length === 0) {
           reply = "I couldn't find anything matching that on TMDb.";
         } else {
           reply = await generateResponse(message, profile, recentTurns, [
-            `TMDb results:\n${JSON.stringify(titles, null, 2)}`,
+            `TMDb results:\n${JSON.stringify(results, null, 2)}`,
           ]);
+          cards = results.slice(0, 3).map((r): ChatCard => {
+            const inLib = !!findMovieByTitle(library, r.title);
+            return {
+              type: "movie",
+              title: r.title,
+              subtitle: [r.releaseDate ? String(new Date(r.releaseDate).getFullYear()) : null, r.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
+              coverUrl: r.posterUrl ?? undefined,
+              inLibrary: inLib,
+              actions: inLib ? [] : [{
+                label: "+ Add to watchlist",
+                action: "add_movie",
+                payload: {
+                  id: makeMovieId(),
+                  title: r.title,
+                  type: r.type,
+                  year: r.releaseDate ? new Date(r.releaseDate).getFullYear() : undefined,
+                  seasons: r.seasons,
+                  runtime: r.runtime ? `${Math.floor(r.runtime / 60)}h ${r.runtime % 60}m` : undefined,
+                  coverUrl: r.posterUrl ?? undefined,
+                  tmdbId: r.id,
+                  status: "watchlist",
+                  dateAdded: new Date().toISOString().slice(0, 10),
+                } satisfies Partial<Movie>,
+              }],
+            };
+          });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -562,6 +672,232 @@ export async function POST(req: NextRequest) {
           ? "Movie search isn't set up yet — add TMDB_API_KEY to your environment variables (free at themoviedb.org/settings/api)."
           : `Movie search failed: ${msg}`;
       }
+      break;
+    }
+    case "book_add": {
+      try {
+        const titles = classification.bookTitles?.length ? classification.bookTitles : [message];
+        const recommender = extractRecommender(message);
+        const today = new Date().toISOString().slice(0, 10);
+
+        // Parallel searches — one per title
+        const searchResults = await Promise.all(titles.map((t) => searchBooks(t).catch(() => [])));
+
+        const addedBooks: Book[] = [];
+        const notFound: string[] = [];
+
+        for (let i = 0; i < titles.length; i++) {
+          const top = searchResults[i][0];
+          if (!top) { notFound.push(titles[i]); continue; }
+          const isbn = top.isbn;
+          const coverUrl = isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined;
+          const book: Book = {
+            id: makeBookId(),
+            title: top.title,
+            author: top.authors[0] ?? "Unknown",
+            isbn,
+            coverUrl,
+            status: "want_to_read",
+            source: "other",
+            recommendedBy: recommender ?? undefined,
+            dateAdded: today,
+          };
+          await addBook(userId, book);
+          addedBooks.push(book);
+        }
+
+        saved = addedBooks.length > 0;
+        const recPart = recommender ? ` (recommended by ${recommender})` : "";
+        const notFoundPart = notFound.length > 0 ? ` Couldn't find: ${notFound.join(", ")}.` : "";
+
+        if (addedBooks.length === 1) {
+          reply = `Added *${addedBooks[0].title}* by ${addedBooks[0].author} to your library${recPart}. View it at /books.${notFoundPart}`;
+        } else if (addedBooks.length > 1) {
+          const list = addedBooks.map((b) => `*${b.title}*`).join(", ");
+          reply = `Added ${addedBooks.length} books to your library${recPart}: ${list}. View them at /books.${notFoundPart}`;
+        } else {
+          reply = `Couldn't find any of those books. Try the full title or author name.`;
+        }
+
+        cards = addedBooks.map((b): ChatCard => ({
+          type: "book",
+          title: b.title,
+          subtitle: `by ${b.author}`,
+          coverUrl: b.coverUrl,
+          inLibrary: true,
+          actions: [],
+        }));
+      } catch (err) {
+        reply = `Couldn't add those books: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      break;
+    }
+    case "book_update": {
+      try {
+        const extraction = await extractBookUpdate(message);
+        const library = await getBooks(userId);
+        const today = new Date().toISOString().slice(0, 10);
+
+        const updates: Partial<Book> = {};
+        if (extraction.status) updates.status = extraction.status;
+        if (extraction.rating != null) updates.rating = extraction.rating;
+        if (extraction.notes) updates.notes = extraction.notes;
+        if (extraction.setDateStarted) updates.dateStarted = today;
+        if (extraction.setDateFinished) updates.dateFinished = today;
+
+        const matched: Book[] = [];
+        const notFound: string[] = [];
+        for (const title of extraction.titles) {
+          const match = findBookByTitle(library, title);
+          if (!match) { notFound.push(title); continue; }
+          matched.push(match);
+        }
+
+        await Promise.all(matched.map((m) => updateBook(userId, m.id, updates)));
+
+        const statusMsg = extraction.status ? ` Status: ${extraction.status.replace(/_/g, " ")}.` : "";
+        const notFoundPart = notFound.length > 0 ? ` (Couldn't find: ${notFound.join(", ")})` : "";
+
+        if (matched.length === 1) {
+          reply = `Updated *${matched[0].title}*.${statusMsg}${notFoundPart}`;
+        } else if (matched.length > 1) {
+          reply = `Updated ${matched.length} books: ${matched.map((m) => `*${m.title}*`).join(", ")}.${statusMsg}${notFoundPart}`;
+        } else {
+          reply = `Couldn't find ${extraction.titles.length === 1 ? `*${extraction.titles[0]}*` : "any of those books"} in your library. Want me to add ${extraction.titles.length === 1 ? "it" : "them"} first?`;
+        }
+      } catch (err) {
+        reply = `Couldn't update those books: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      break;
+    }
+    case "movie_add": {
+      try {
+        const titles = classification.movieTitles?.length ? classification.movieTitles : [message];
+        const recommender = extractRecommender(message);
+        const today = new Date().toISOString().slice(0, 10);
+
+        // Parallel TMDB searches
+        const searchResults = await Promise.all(
+          titles.map((t) => searchMoviesAndTV(t).catch(() => []))
+        );
+
+        // Parallel streaming provider fetches for found results
+        const tops = searchResults.map((r) => r[0] ?? null);
+        const streamingResults = await Promise.all(
+          tops.map((top) => (top?.id ? fetchStreamingProviders(top.id, top.type) : Promise.resolve([])))
+        );
+
+        const addedMovies: Movie[] = [];
+        const notFound: string[] = [];
+
+        for (let i = 0; i < titles.length; i++) {
+          const top = tops[i];
+          if (!top) { notFound.push(titles[i]); continue; }
+          const streaming = streamingResults[i];
+          const movie: Movie = {
+            id: makeMovieId(),
+            title: top.title,
+            type: top.type,
+            year: top.releaseDate ? new Date(top.releaseDate).getFullYear() : undefined,
+            seasons: top.seasons,
+            runtime: top.runtime ? `${Math.floor(top.runtime / 60)}h ${top.runtime % 60}m` : undefined,
+            coverUrl: top.posterUrl ?? undefined,
+            tmdbId: top.id,
+            status: "watchlist",
+            recommendedBy: recommender ?? undefined,
+            streamingOn: streaming.length > 0 ? streaming : undefined,
+            dateAdded: today,
+          };
+          await addMovie(movie);
+          addedMovies.push(movie);
+        }
+
+        saved = addedMovies.length > 0;
+        const recPart = recommender ? ` (recommended by ${recommender})` : "";
+        const notFoundPart = notFound.length > 0 ? ` Couldn't find: ${notFound.join(", ")}.` : "";
+
+        if (addedMovies.length === 1) {
+          const streaming = addedMovies[0].streamingOn;
+          const streamPart = streaming?.length ? ` Available on ${streaming.slice(0, 2).join(", ")}.` : "";
+          reply = `Added *${addedMovies[0].title}* to your watchlist${recPart}.${streamPart} View it at /movies.${notFoundPart}`;
+        } else if (addedMovies.length > 1) {
+          const list = addedMovies.map((m) => `*${m.title}*`).join(", ");
+          reply = `Added ${addedMovies.length} titles to your watchlist${recPart}: ${list}. View them at /movies.${notFoundPart}`;
+        } else {
+          reply = `Couldn't find any of those on TMDb. Try the full title.`;
+        }
+
+        cards = addedMovies.map((m): ChatCard => ({
+          type: "movie",
+          title: m.title,
+          subtitle: [m.year, m.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
+          coverUrl: m.coverUrl,
+          inLibrary: true,
+          actions: [],
+        }));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        reply = msg.includes("TMDB_API_KEY")
+          ? "Movie search isn't set up yet — add TMDB_API_KEY to your environment variables."
+          : `Couldn't add those movies: ${msg}`;
+      }
+      break;
+    }
+    case "movie_update": {
+      try {
+        const extraction = await extractMovieUpdate(message);
+        const library = await getMovies();
+        const today = new Date().toISOString().slice(0, 10);
+
+        const updates: Partial<Movie> = {};
+        if (extraction.status) updates.status = extraction.status;
+        if (extraction.rating != null) updates.rating = extraction.rating;
+        if (extraction.notes) updates.notes = extraction.notes;
+        if (extraction.currentSeason != null) updates.currentSeason = extraction.currentSeason;
+        if (extraction.currentEpisode != null) updates.currentEpisode = extraction.currentEpisode;
+        if (extraction.setDateWatched) updates.dateWatched = today;
+
+        const matched: Movie[] = [];
+        const notFound: string[] = [];
+        for (const title of extraction.titles) {
+          const match = findMovieByTitle(library, title);
+          if (!match) { notFound.push(title); continue; }
+          matched.push(match);
+        }
+
+        await Promise.all(matched.map((m) => updateMovie(m.id, updates)));
+
+        const statusMsg = extraction.status ? ` Status: ${extraction.status}.` : "";
+        const progressMsg = extraction.currentSeason != null
+          ? ` Progress: S${extraction.currentSeason}${extraction.currentEpisode != null ? `E${extraction.currentEpisode}` : ""}.`
+          : "";
+        const notFoundPart = notFound.length > 0 ? ` (Couldn't find: ${notFound.join(", ")})` : "";
+
+        if (matched.length === 1) {
+          reply = `Updated *${matched[0].title}*.${statusMsg}${progressMsg}${notFoundPart}`;
+        } else if (matched.length > 1) {
+          reply = `Updated ${matched.length} titles: ${matched.map((m) => `*${m.title}*`).join(", ")}.${statusMsg}${notFoundPart}`;
+        } else {
+          reply = `Couldn't find ${extraction.titles.length === 1 ? `*${extraction.titles[0]}*` : "any of those titles"} in the library. Want me to add ${extraction.titles.length === 1 ? "it" : "them"} first?`;
+        }
+      } catch (err) {
+        reply = `Couldn't update those titles: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      break;
+    }
+    case "library_stats": {
+      const [bookLib, movieLib] = await Promise.all([getBooks(userId), getMovies()]);
+      const bookCounts = { reading: 0, want_to_read: 0, finished: 0, shelf: 0 };
+      for (const b of bookLib) bookCounts[b.status]++;
+      const movieCounts = { watching: 0, watchlist: 0, seen: 0, maybe: 0 };
+      for (const m of movieLib) movieCounts[m.status]++;
+      reply = [
+        `**Books** (${bookLib.length} total)`,
+        `Reading: ${bookCounts.reading} · Want to read: ${bookCounts.want_to_read} · Finished: ${bookCounts.finished} · On shelf: ${bookCounts.shelf}`,
+        ``,
+        `**Movies & TV** (${movieLib.length} total)`,
+        `Watching: ${movieCounts.watching} · Watchlist: ${movieCounts.watchlist} · Seen: ${movieCounts.seen} · Maybe: ${movieCounts.maybe}`,
+      ].join("\n");
       break;
     }
     case "web_search": {
@@ -660,7 +996,11 @@ export async function POST(req: NextRequest) {
     "web_search",       // has its own decideSave flow
     "staples_update",   // saved to Redis pantry
     "recipe_add",       // saved to Redis recipes
-    "list_read", "staples_read", "calendar_read", // read-only
+    "book_add",         // saved to Redis library
+    "book_update",      // saved to Redis library
+    "movie_add",        // saved to Redis library
+    "movie_update",     // saved to Redis library
+    "list_read", "staples_read", "calendar_read", "library_stats", // read-only
     "meal_plan_clear",
   ]);
   if (!AUTO_SAVE_SKIP.has(intent)) {
@@ -674,5 +1014,5 @@ export async function POST(req: NextRequest) {
     })();
   }
 
-  return NextResponse.json({ reply, intent, saved });
+  return NextResponse.json({ reply, intent, saved, ...(cards ? { cards } : {}) });
 }

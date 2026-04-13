@@ -48,7 +48,8 @@ Client (Bearer token)
     (skipped for intents with dedicated write paths: save_note, list_write, calendar_write,
      web_search, staples_update, recipe_add, and all read-only intents)
 
-  → return { reply, intent, saved }
+  → return { reply, intent, saved, cards? }
+  (cards is populated for book_search, book_add, movie_query, movie_add)
 ```
 
 ---
@@ -76,7 +77,7 @@ All extraction/classification uses **Haiku with forced `tool_use`** — every Ha
 | Model | Constant | Used for |
 |---|---|---|
 | Sonnet 4.6 | `MODEL` | `generateResponse()`, `selectMeals()`, `runWebSearch()` |
-| Haiku 4.5 | `FAST_MODEL` | `classifyIntent()`, `extractEventDetails()`, `extractProfileUpdate()`, `extractRecipeFromUrl()`, `extractSportsQuery()`, `identifySwapTarget()`, `categorizeItems()`, `searchUserLists()`, `autoSaveExchange()` |
+| Haiku 4.5 | `FAST_MODEL` | `classifyIntent()`, `extractEventDetails()`, `extractProfileUpdate()`, `extractRecipeFromUrl()`, `extractSportsQuery()`, `identifySwapTarget()`, `categorizeItems()`, `searchUserLists()`, `autoSaveExchange()`, `extractBookUpdate()`, `extractMovieUpdate()` |
 
 ---
 
@@ -84,13 +85,15 @@ All extraction/classification uses **Haiku with forced `tool_use`** — every Ha
 
 Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, returns `ClassificationResult`.
 
-`ClassificationResult` carries `intent` + optional fields: `listName`, `items`, `staplesAction`, `staplesItems`, `correctionItem`, `correctionCategory`.
+`ClassificationResult` carries `intent` + optional fields: `listName`, `items`, `bookTitles`, `movieTitles`, `staplesAction`, `staplesItems`, `correctionItem`, `correctionCategory`.
 
 ### Key classifier distinctions
 
-- `list_read` — only for explicit dump requests ("show me / what's on my X list"). Semantic questions about list contents ("was there a movie about X on my list?") → `query`.
-- `movie_query` — lookup/info only ("who's in X", "is X on Netflix"). Save intent ("I want to watch X") → `list_write`.
-- `list_write` — "I want to watch X" → `listName=watchlist`; "I want to read X" → `listName=books`.
+- `list_read` — only for explicit dump requests ("show me / what's on my X list"). Semantic questions about list contents → `query`.
+- `movie_query` — lookup/info only. Save intent ("I want to watch X") → `movie_add`.
+- `movie_add` — saves to structured `library:shared:movies` Redis store (not the generic list store).
+- `book_add` — saves to structured `library:{userId}:books` Redis store.
+- `list_write` — grocery lists and generic item lists only. NOT for movies or books.
 
 ### All intents
 
@@ -113,10 +116,15 @@ Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, return
 | `meal_plan_swap` | route.ts inline | Haiku identifies swap target → replaces meal |
 | `meal_plan_grocery` | route.ts inline | `buildGroceryList()` → formatted text |
 | `meal_plan_clear` | route.ts inline | Clears plan + grocery list from Redis |
-| `book_search` | route.ts inline | Google Books API search |
-| `audible_library` | route.ts inline | Pinecone semantic search (`kevin-audible` namespace) |
-| `movie_query` | route.ts inline | TMDb search; "I want to watch X" regex fallback → `addItemToList` |
-| `list_write` | `lib/lists/handler.ts` + `lib/lists/addItem.ts` | Grocery lists → categorize flow; non-grocery single item → `addItemToList` with optional TMDb enrichment |
+| `book_search` | route.ts inline | Google Books API search; returns `cards[]` with "Add to library" actions |
+| `book_add` | route.ts inline | Google Books lookup → save to `library:{userId}:books`; returns `cards[]` |
+| `book_update` | route.ts inline | Haiku extraction → find in Redis library → update status/rating/notes/dates |
+| `audible_library` | route.ts inline | Redis `library:{userId}:books` (source=audible) first; falls back to Pinecone |
+| `movie_query` | route.ts inline | TMDb search + Redis library check; returns `cards[]` with "Add to watchlist" actions |
+| `movie_add` | route.ts inline | TMDb lookup + streaming providers → save to `library:shared:movies`; returns `cards[]` |
+| `movie_update` | route.ts inline | Haiku extraction → find in Redis library → update status/rating/progress |
+| `library_stats` | route.ts inline | Count books + movies by status from Redis stores |
+| `list_write` | `lib/lists/handler.ts` + `lib/lists/addItem.ts` | Grocery lists → categorize flow; non-grocery single item → `addItemToList`. No longer handles movies/books. |
 | `list_read` | `lib/lists/handler.ts` | Raw list dump by name; no listName → scan all via `list-index:{userId}` |
 | `categorization_correction` | route.ts inline | Saves shared override → `category-overrides:shared` |
 | `staples_update` | route.ts inline | Add/remove from `pantry:shared` |
@@ -143,6 +151,8 @@ Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, return
 | `list:{userId}:{listName}` | `ListItem[]` | per-user | `lib/lists/store.ts` |
 | `list-index:{userId}` | `string[]` of list names | per-user | `lib/lists/index.ts` |
 | `skinlog:{userId}` | `SkinLogEntry[]` | per-user | `lib/skinlog/store.ts` |
+| `library:{userId}:books` | `Book[]` full array | per-user | `lib/books/store.ts` |
+| `library:shared:movies` | `Movie[]` full array | shared | `lib/movies/store.ts` |
 
 All stores use a **full-replace pattern** — fetch current value, merge/update, write back. No atomic partial updates.
 
@@ -162,7 +172,7 @@ All stores use a **full-replace pattern** — fetch current value, merge/update,
 | `shared-restaurants` | Restaurant recommendations |
 | `shared-movies` | Movie/TV enriched saves |
 | `shared-books` | Book recommendations |
-| `kevin-audible` | Kevin's Audible library (one-time sync via `scripts/sync-audible.mjs`) |
+| `kevin-audible` | Kevin's Audible library — legacy fallback only; primary store is now `library:kevin:books` in Redis |
 
 ---
 
@@ -237,7 +247,12 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 - Dark theme: `#000` bg, `#111`/`#1a1a1a` cards, `#fff` text, `#888` secondary
 - CSS Modules per page/component — no Tailwind
 - `"use client"` components store Bearer token in `localStorage`
-- Bottom nav: `components/BottomNav.tsx` — current tabs: Chat, Meal Plan, Recipes, Skin Log
+- Bottom nav: `components/BottomNav.tsx` — 3 tabs: Menu (Grid2x2), Chat (MessageCircle), Meals (UtensilsCrossed). Uses `lucide-react` icons.
+- Menu overlay: `components/MenuOverlay.tsx` — slide-up sheet with Settings row + Library section (Books, Movies & TV, Recipes)
+- Library pages: `/books` (`app/books/`), `/movies` (`app/movies/`) — list + detail views
+- Settings page: `/settings` (`app/settings/`) — profile editor backed by `GET/PATCH /api/profile`
+- Chat cards: `components/BookCard.tsx`, `components/MovieCard.tsx` — rendered in chat when API returns `cards[]`
+- Skin Log page (`/skinlog`) remains functional but is no longer in bottom nav
 
 ---
 
@@ -251,7 +266,7 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 
 | Script | Purpose |
 |---|---|
-| `scripts/sync-audible.mjs` | Sync Audible library JSON → Pinecone (`kevin-audible`) |
+| `scripts/sync-audible.mjs` | Sync Audible library JSON → Redis `library:kevin:books` (upserts by ASIN; never overwrites user-set fields; infers `finished` from 100% progress) |
 | `scripts/fetch-audible-library.py` | Export Audible library to JSON (requires `audible-quickstart` auth) |
 | `scripts/normalize-recipe-units.mjs` | Normalize unit names in all stored recipes — unicode fractions, fl oz, long-form units. Run with `--dry-run` first. |
 | `scripts/import-vault.mjs` | One-time import of notes from an Obsidian vault |
@@ -285,11 +300,11 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 ### Features
 
 - **Weekly briefing cron** — stub at `app/api/cron/route.ts`; send meal plan + calendar summary Monday 8am to Kevin and Kylie.
-- **Movies / Books / Audible UI tabs** — data in Pinecone and Redis lists, chat works, no dedicated pages yet.
 - **`PlannedMeal.mealType`** — extend to support breakfast/lunch/dinner type in meal planning.
-- **Kylie's Audible** — `audible_library` intent hardcoded to `kevin-audible` namespace; Kylie needs her own sync and namespace.
-- **Migrate old Pinecone watch/book notes to Redis lists** — Lord of the Flies and other pre-lists-system items were saved as Pinecone notes; a one-time migration script would make them visible in the structured list system.
-- **Book list enrichment** — `addItemToList` for books uses `enrichmentSource: "none"`; could add Google Books enrichment path (same pattern as TMDb).
+- **Kylie's Audible** — `audible_library` intent now searches `library:{userId}:books` automatically per-user. Kylie needs her own Audible export + sync run (`AUDIBLE_USER_ID=kylie node scripts/sync-audible.mjs kylie-library.json`).
+- **Admin interface** — deferred from sonny-changes-spec.md. Dedicated `/admin` page with tabbed table UI for bulk editing books, movies, and recipes.
+- **Migrate old Pinecone watchlist/book-list entries to Redis stores** — items saved before the structured library existed live in `sharedMovies` / `shared-books` Pinecone namespaces; a one-time migration would surface them in the `/books` and `/movies` pages.
+- **Book cover fallback quality** — Open Library coverage is incomplete. Consider adding a Google Books cover URL (available in the `searchBooks()` response via `info.imageLinks.thumbnail`) as a secondary source.
 
 ### Infrastructure
 
@@ -300,5 +315,4 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 
 ### Open questions
 
-- Bottom nav expansion strategy if Movies/Books get dedicated pages (currently 4 tabs, limited real estate).
 - Kylie full onboarding: `KYLIE_SECRET`, profile seed, Audible library sync, skin log introduction.

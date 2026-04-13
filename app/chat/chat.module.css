@@ -82,6 +82,19 @@
   margin: auto;
 }
 
+.messageGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-left: 4px;
+}
+
 .bubble {
   max-width: 80%;
   padding: 0.7rem 1rem;

@@ -1,27 +1,28 @@
 #!/usr/bin/env node
-// One-time script to seed your Audible library into Pinecone.
+// Syncs your Audible library into the structured Redis book store
+// (library:kevin:books). Re-run after new purchases.
 //
-// Prerequisites:
-//   pip install audible-cli
-//   audible-cli quickstart          # log in to your Audible account
-//   audible library export --format json --output library.json
+// Prerequisites (first time only — run in Terminal.app, needs interactive input):
+//   /Users/Kevin/Library/Python/3.9/bin/audible-quickstart
+//
+// Export library (run in Terminal.app):
+//   python3 scripts/fetch-audible-library.py > library.json
 //
 // Usage:
-//   node scripts/sync-audible.mjs library.json
+//   KV_REST_API_URL=... KV_REST_API_TOKEN=... node scripts/sync-audible.mjs library.json
 //
-// Re-run whenever you make new purchases.
-// Uses Pinecone integrated inference (llama-text-embed-v2) — no OpenAI key needed.
+// Or pipe env from .env.local:
+//   export $(grep -E 'KV_REST' .env.local | tr -d '"') && node scripts/sync-audible.mjs library.json
 
 import { readFileSync } from "fs";
-import { Pinecone } from "@pinecone-database/pinecone";
+import { Redis } from "@upstash/redis";
 
-const PINECONE_API_KEY = process.env.PINECONE_API_KEY;
-const PINECONE_INDEX = process.env.PINECONE_INDEX_NAME ?? "sonny";
-const NAMESPACE = "kevin-audible";
-const EMBED_MODEL = "llama-text-embed-v2";
+const KV_URL = process.env.KV_REST_API_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+const USER_ID = process.env.AUDIBLE_USER_ID ?? "kevin";
 
-if (!PINECONE_API_KEY) {
-  console.error("Error: PINECONE_API_KEY environment variable is required");
+if (!KV_URL || !KV_TOKEN) {
+  console.error("Error: KV_REST_API_URL and KV_REST_API_TOKEN are required");
   process.exit(1);
 }
 
@@ -31,90 +32,94 @@ if (!filePath) {
   process.exit(1);
 }
 
-async function embedTexts(texts) {
-  const res = await fetch("https://api.pinecone.io/embed", {
-    method: "POST",
-    headers: {
-      "Api-Key": PINECONE_API_KEY,
-      "Content-Type": "application/json",
-      "X-Pinecone-API-Version": "2025-04",
-    },
-    body: JSON.stringify({
-      model: EMBED_MODEL,
-      inputs: texts.map((text) => ({ text })),
-      parameters: { input_type: "passage" },
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Pinecone embed failed (${res.status}): ${err}`);
-  }
-  const data = await res.json();
-  return data.data.map((d) => d.values);
+const redis = new Redis({ url: KV_URL, token: KV_TOKEN });
+const REDIS_KEY = `library:${USER_ID}:books`;
+
+function makeId(asin) {
+  return `audible-${asin}`;
+}
+
+function parseSeries(book) {
+  if (!book.series) return { series: undefined, seriesPosition: undefined };
+  // audible-cli exports series as an array of objects or strings
+  const first = Array.isArray(book.series) ? book.series[0] : null;
+  if (!first) return { series: undefined, seriesPosition: undefined };
+  if (typeof first === "string") return { series: first, seriesPosition: undefined };
+  return {
+    series: first.title ?? first.name ?? String(first),
+    seriesPosition: first.position != null ? Number(first.position) : undefined,
+  };
+}
+
+function inferStatus(book) {
+  const pct = book.percent_complete ?? book.percentComplete;
+  if (pct != null && Number(pct) >= 99) return "finished";
+  return "shelf";
 }
 
 async function main() {
-  const pinecone = new Pinecone({ apiKey: PINECONE_API_KEY });
-  const index = pinecone.index(PINECONE_INDEX);
-
   const raw = JSON.parse(readFileSync(filePath, "utf8"));
-  const books = Array.isArray(raw) ? raw : raw.library ?? Object.values(raw);
+  const books = Array.isArray(raw) ? raw : (raw.library ?? Object.values(raw));
+  console.log(`Found ${books.length} books in ${filePath}`);
 
-  console.log(`Found ${books.length} books in library.json`);
+  // Load existing library
+  const existing = (await redis.get(REDIS_KEY)) ?? [];
+  const byAsin = new Map(existing.map((b) => [b.audibleAsin, b]));
 
-  const BATCH_SIZE = 10;
-  let synced = 0;
-  let skipped = 0;
+  let added = 0;
+  let updated = 0;
 
-  for (let i = 0; i < books.length; i += BATCH_SIZE) {
-    const batch = books.slice(i, i + BATCH_SIZE);
+  for (const book of books) {
+    const asin = book.asin;
+    if (!asin) continue;
 
-    const texts = batch.map((book) =>
-      [
-        book.title,
-        book.authors?.join(", "),
-        book.publisher,
-        book.merchandising_summary,
-        book.publisher_summary,
-        book.categories?.join(", "),
-        book.series?.join(", "),
-      ]
-        .filter(Boolean)
-        .join(" | ")
-    );
+    const now = new Date().toISOString();
+    const { series, seriesPosition } = parseSeries(book);
+    const inferredStatus = inferStatus(book);
 
-    let vectors;
-    try {
-      vectors = await embedTexts(texts);
-    } catch (err) {
-      console.error(`Embed failed for batch ${i}–${i + BATCH_SIZE}:`, err.message);
-      skipped += batch.length;
-      continue;
+    if (byAsin.has(asin)) {
+      // Update existing record — never overwrite user-set fields
+      const existing = byAsin.get(asin);
+      const updated_record = {
+        ...existing,
+        lastSyncedAt: now,
+        // Only update status if user hasn't manually set it beyond "shelf"
+        ...(existing.status === "shelf" && inferredStatus === "finished"
+          ? { status: "finished", dateFinished: existing.dateFinished ?? now.slice(0, 10) }
+          : {}),
+      };
+      byAsin.set(asin, updated_record);
+      updated++;
+    } else {
+      // New record
+      const newBook = {
+        id: makeId(asin),
+        title: book.title ?? "Unknown",
+        author: Array.isArray(book.authors)
+          ? book.authors.join(", ")
+          : (book.authors ?? "Unknown"),
+        series,
+        seriesPosition,
+        audibleAsin: asin,
+        status: inferredStatus,
+        source: "audible",
+        coverUrl: book.cover_url ?? book.product_images?.["500"] ?? undefined,
+        dateAdded: book.purchase_date?.slice(0, 10) ?? now.slice(0, 10),
+        ...(inferredStatus === "finished"
+          ? { dateFinished: now.slice(0, 10) }
+          : {}),
+        lastSyncedAt: now,
+      };
+      byAsin.set(asin, newBook);
+      added++;
     }
-
-    const records = batch.map((book, idx) => ({
-      id: book.asin ?? `book-${i + idx}`,
-      values: vectors[idx],
-      metadata: {
-        asin: book.asin ?? "",
-        title: book.title ?? "",
-        authors: book.authors?.join(", ") ?? "",
-        narrator: book.narrators?.join(", ") ?? "",
-        runtime_minutes: book.runtime_length_min ?? 0,
-        purchase_date: book.purchase_date ?? "",
-        series: book.series?.join(", ") ?? "",
-        summary: ((book.merchandising_summary ?? book.publisher_summary ?? "")).slice(0, 500),
-        audible_url: book.asin ? `https://www.audible.com/pd/${book.asin}` : "",
-      },
-    }));
-
-    await index.namespace(NAMESPACE).upsert({ records });
-    synced += batch.length;
-    console.log(`Synced ${synced}/${books.length}...`);
   }
 
-  console.log(`\nDone! Synced: ${synced}, Skipped: ${skipped}`);
-  console.log(`Namespace: ${NAMESPACE}`);
+  const finalLibrary = Array.from(byAsin.values());
+  await redis.set(REDIS_KEY, finalLibrary);
+
+  console.log(`\nDone! Added: ${added}, Updated: ${updated}, Total: ${finalLibrary.length}`);
+  console.log(`Redis key: ${REDIS_KEY}`);
 }
 
 main().catch((err) => {

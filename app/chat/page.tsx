@@ -4,11 +4,15 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import BottomNav from "@/components/BottomNav";
+import BookCard from "@/components/BookCard";
+import MovieCard from "@/components/MovieCard";
+import type { ChatCard } from "@/lib/types/cards";
 import styles from "./chat.module.css";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  cards?: ChatCard[];
 }
 
 const TOKEN_KEY = "sonny_token";
@@ -127,7 +131,7 @@ export default function ChatPage() {
         const data = await res.json();
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: data.reply },
+          { role: "assistant", content: data.reply, cards: data.cards },
         ]);
       } catch {
         setMessages((prev) => [
@@ -213,18 +217,30 @@ export default function ChatPage() {
           </div>
         )}
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`${styles.bubble} ${
-              msg.role === "user" ? styles.userBubble : styles.assistantBubble
-            }`}
-          >
-            {msg.role === "user" ? (
-              msg.content
-            ) : (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {msg.content}
-              </ReactMarkdown>
+          <div key={i} className={styles.messageGroup}>
+            <div
+              className={`${styles.bubble} ${
+                msg.role === "user" ? styles.userBubble : styles.assistantBubble
+              }`}
+            >
+              {msg.role === "user" ? (
+                msg.content
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {msg.content}
+                </ReactMarkdown>
+              )}
+            </div>
+            {msg.cards && msg.cards.length > 0 && (
+              <div className={styles.cardList}>
+                {msg.cards.map((card, ci) =>
+                  card.type === "book" ? (
+                    <BookCard key={ci} card={card} />
+                  ) : (
+                    <MovieCard key={ci} card={card} />
+                  )
+                )}
+              </div>
             )}
           </div>
         ))}

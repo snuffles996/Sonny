@@ -1,0 +1,365 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 680px;
+  margin: 0 auto;
+  background: #000;
+  position: relative;
+}
+
+/* ── List view ─────────────────────────────────────── */
+
+.header {
+  padding: 1rem 1rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.search {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 0.6rem 1rem;
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.search::placeholder {
+  color: #555;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.5rem 1rem;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
+}
+
+.pill {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #888;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.pill.activePill {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 0.5rem;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.empty {
+  color: #555;
+  font-size: 0.9rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+/* ── Movie row ──────────────────────────────────────── */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #111;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: #fff;
+}
+
+.row:active {
+  background: #0a0a0a;
+}
+
+.posterThumb {
+  width: 42px;
+  height: 62px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+}
+
+.posterPlaceholder {
+  width: 42px;
+  height: 62px;
+  border-radius: 4px;
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  color: #555;
+  font-weight: 600;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.rowSub {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowMeta {
+  font-size: 0.75rem;
+  color: #666;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Status badges ──────────────────────────────────── */
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge_watching {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffca28;
+}
+
+.badge_watchlist {
+  background: rgba(123, 110, 246, 0.15);
+  color: #9e93fa;
+}
+
+.badge_seen {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+}
+
+.badge_maybe {
+  background: rgba(136, 136, 136, 0.15);
+  color: #888;
+}
+
+/* ── Stars ──────────────────────────────────────────── */
+
+.stars {
+  display: flex;
+  gap: 1px;
+  font-size: 0.75rem;
+}
+
+.starFilled {
+  color: #ffc107;
+}
+
+.starEmpty {
+  color: #333;
+}
+
+/* ── Detail overlay ─────────────────────────────────── */
+
+.detail {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.detailHeader {
+  padding: 12px 16px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #111;
+}
+
+.backBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.backBtn:active {
+  color: #fff;
+}
+
+.detailBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 16px 32px;
+  scrollbar-width: none;
+}
+
+.detailBody::-webkit-scrollbar {
+  display: none;
+}
+
+.detailHero {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.posterLarge {
+  width: 90px;
+  height: 134px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+}
+
+.detailMeta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.detailTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.detailSub {
+  font-size: 0.82rem;
+  color: #888;
+  margin: 0;
+}
+
+.detailYear {
+  font-size: 0.8rem;
+  color: #666;
+  margin: 0;
+}
+
+.streaming {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.streamPill {
+  font-size: 0.72rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #aaa;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.detailFields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.fieldValue {
+  font-size: 0.88rem;
+  color: #ccc;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  font-size: 0.78rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #888;
+  padding: 3px 10px;
+  border-radius: 999px;
+}

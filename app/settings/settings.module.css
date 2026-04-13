@@ -1,0 +1,125 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: #000;
+  color: #fff;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 20px 32px;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.heading {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 24px;
+}
+
+.muted {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.accountRow {
+  display: flex;
+  flex-direction: column;
+  background: #111;
+  border: 1px solid #1e1e1e;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 28px;
+}
+
+.accountName {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.accountSub {
+  font-size: 0.78rem;
+  color: #666;
+  margin-top: 2px;
+}
+
+.section {
+  margin-bottom: 28px;
+}
+
+.sectionTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #555;
+  margin: 0 0 12px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  color: #aaa;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.input {
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.9rem;
+  padding: 10px 12px;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input:focus {
+  border-color: #444;
+}
+
+.input::placeholder {
+  color: #444;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+.error {
+  color: #e05;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.saveButton {
+  width: 100%;
+  background: #fff;
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  padding: 13px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.saveButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.saveButton:active:not(:disabled) {
+  opacity: 0.85;
+}
