@@ -88,9 +88,10 @@ export default function BooksPage() {
   // Bulk select mode
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkStatus, setBulkStatus] = useState<BookStatus | "">("");
-  const [bulkRating, setBulkRating] = useState<string>("");
-  const [bulkDateFinished, setBulkDateFinished] = useState("");
+  // null = field not active (won't be applied); non-null = explicitly set by user
+  const [bulkStatus, setBulkStatus] = useState<BookStatus | null>(null);
+  const [bulkRating, setBulkRating] = useState<number | null>(null);
+  const [bulkDateFinished, setBulkDateFinished] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
 
   useEffect(() => {
@@ -138,9 +139,9 @@ export default function BooksPage() {
   function toggleSelectMode() {
     setSelectMode((v) => !v);
     setSelectedIds(new Set());
-    setBulkStatus("");
-    setBulkRating("");
-    setBulkDateFinished("");
+    setBulkStatus(null);
+    setBulkRating(null);
+    setBulkDateFinished(null);
   }
 
   function toggleSelect(id: string) {
@@ -154,17 +155,17 @@ export default function BooksPage() {
   async function applyBulk() {
     if (!selectedIds.size) return;
     const updates: Partial<Book> = {};
-    if (bulkStatus) updates.status = bulkStatus;
-    if (bulkRating) updates.rating = parseInt(bulkRating);
-    if (bulkDateFinished.trim()) updates.dateFinished = bulkDateFinished.trim();
+    if (bulkStatus !== null) updates.status = bulkStatus;
+    if (bulkRating !== null) updates.rating = bulkRating;
+    if (bulkDateFinished !== null && bulkDateFinished.trim()) updates.dateFinished = bulkDateFinished.trim();
     if (!Object.keys(updates).length) return;
     setBulkSaving(true);
     await Promise.all(Array.from(selectedIds).map((id) => patchBook(id, updates)));
     setBulkSaving(false);
     setSelectedIds(new Set());
-    setBulkStatus("");
-    setBulkRating("");
-    setBulkDateFinished("");
+    setBulkStatus(null);
+    setBulkRating(null);
+    setBulkDateFinished(null);
     setSelectMode(false);
   }
 
@@ -448,42 +449,65 @@ export default function BooksPage() {
             <button
               className={styles.bulkApply}
               onClick={applyBulk}
-              disabled={!selectedIds.size || bulkSaving || (!bulkStatus && !bulkRating && !bulkDateFinished)}
+              disabled={!selectedIds.size || bulkSaving || (bulkStatus === null && bulkRating === null && bulkDateFinished === null)}
             >
               {bulkSaving ? "Saving…" : "Apply"}
             </button>
           </div>
           <div className={styles.bulkFields}>
-            <select
-              className={`${styles.bulkSelect} ${bulkStatus ? styles.bulkSelectActive : ""}`}
-              value={bulkStatus}
-              onChange={(e) => setBulkStatus(e.target.value as BookStatus | "")}
-            >
-              <option value="">— status —</option>
-              <option value="finished">Finished</option>
-              <option value="reading">Reading</option>
-              <option value="want_to_read">Want to read</option>
-              <option value="shelf">On shelf</option>
-            </select>
-            <select
-              className={`${styles.bulkSelect} ${bulkRating ? styles.bulkSelectActive : ""}`}
-              value={bulkRating}
-              onChange={(e) => setBulkRating(e.target.value)}
-            >
-              <option value="">— rating —</option>
-              <option value="1">★ 1</option>
-              <option value="2">★★ 2</option>
-              <option value="3">★★★ 3</option>
-              <option value="4">★★★★ 4</option>
-              <option value="5">★★★★★ 5</option>
-            </select>
-            <input
-              className={`${styles.bulkInput} ${bulkDateFinished ? styles.bulkSelectActive : ""}`}
-              type="text"
-              value={bulkDateFinished}
-              placeholder="— date finished —"
-              onChange={(e) => setBulkDateFinished(e.target.value)}
-            />
+            {/* Status field */}
+            {bulkStatus === null ? (
+              <button className={styles.bulkChip} onClick={() => setBulkStatus("finished")}>+ Status</button>
+            ) : (
+              <div className={styles.bulkFieldActive}>
+                <select
+                  className={styles.bulkSelect}
+                  value={bulkStatus}
+                  onChange={(e) => setBulkStatus(e.target.value as BookStatus)}
+                >
+                  <option value="finished">Finished</option>
+                  <option value="reading">Reading</option>
+                  <option value="want_to_read">Want to read</option>
+                  <option value="shelf">On shelf</option>
+                </select>
+                <button className={styles.bulkClear} onClick={() => setBulkStatus(null)}>×</button>
+              </div>
+            )}
+            {/* Rating field */}
+            {bulkRating === null ? (
+              <button className={styles.bulkChip} onClick={() => setBulkRating(5)}>+ Rating</button>
+            ) : (
+              <div className={styles.bulkFieldActive}>
+                <select
+                  className={styles.bulkSelect}
+                  value={bulkRating}
+                  onChange={(e) => setBulkRating(parseInt(e.target.value))}
+                >
+                  <option value="1">★ 1</option>
+                  <option value="2">★★ 2</option>
+                  <option value="3">★★★ 3</option>
+                  <option value="4">★★★★ 4</option>
+                  <option value="5">★★★★★ 5</option>
+                </select>
+                <button className={styles.bulkClear} onClick={() => setBulkRating(null)}>×</button>
+              </div>
+            )}
+            {/* Date finished field */}
+            {bulkDateFinished === null ? (
+              <button className={styles.bulkChip} onClick={() => setBulkDateFinished("")}>+ Date finished</button>
+            ) : (
+              <div className={styles.bulkFieldActive}>
+                <input
+                  className={styles.bulkInput}
+                  type="text"
+                  value={bulkDateFinished}
+                  placeholder="e.g. 2024-03-15"
+                  onChange={(e) => setBulkDateFinished(e.target.value)}
+                  autoFocus
+                />
+                <button className={styles.bulkClear} onClick={() => setBulkDateFinished(null)}>×</button>
+              </div>
+            )}
           </div>
         </div>
       )}
