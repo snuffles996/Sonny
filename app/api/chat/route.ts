@@ -38,6 +38,7 @@ import { searchMoviesAndTV } from "@/lib/movies/search";
 import { runWebSearch } from "@/lib/search/webSearch";
 import { decideSave } from "@/lib/search/saveDecision";
 import { saveSearchResult } from "@/lib/search/store";
+import { autoSaveExchange } from "@/lib/notes/autoSave";
 import {
   savePendingRecommender,
   getPendingRecommender,
@@ -649,6 +650,29 @@ export async function POST(req: NextRequest) {
   // Persist turns sequentially to preserve order
   await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
   await appendTurn(userId, { role: "assistant", content: reply, timestamp: Date.now() });
+
+  // Fire-and-forget auto-save: persist notable exchanges to Pinecone with a date prefix.
+  // Skip intents that already write to a dedicated store (lists, calendar, web search, etc.)
+  const AUTO_SAVE_SKIP = new Set<string>([
+    "save_note",        // already saved explicitly
+    "list_write",       // saved to Redis lists
+    "calendar_write",   // saved to CalDAV
+    "web_search",       // has its own decideSave flow
+    "staples_update",   // saved to Redis pantry
+    "recipe_add",       // saved to Redis recipes
+    "list_read", "staples_read", "calendar_read", // read-only
+    "meal_plan_clear",
+  ]);
+  if (!AUTO_SAVE_SKIP.has(intent)) {
+    const dateLabel = new Date().toLocaleDateString("en-US", {
+      year: "numeric", month: "long", day: "numeric", timeZone: USER_TIMEZONE,
+    });
+    void (async () => {
+      try {
+        await autoSaveExchange(userId, message, reply, dateLabel);
+      } catch { /* non-fatal */ }
+    })();
+  }
 
   return NextResponse.json({ reply, intent, saved });
 }
