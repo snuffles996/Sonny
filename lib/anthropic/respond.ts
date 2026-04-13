@@ -31,9 +31,10 @@ function buildSystemPrompt(profile: UserProfile): string {
     `- Search the Audible library (audible library)`,
     `- Look up movies and TV shows via TMDb (movie query)`,
     ``,
-    `## Important`,
-    `Only claim to have done something if it was explicitly handled before this response was generated.`,
-    `If asked to do something outside the list above, say you can't do that yet — do NOT pretend to have done it.`,
+    `## Critical rules`,
+    `- Only claim to have done something if it was explicitly handled before this response was generated. You are generating a reply — you cannot write to lists, calendar, or any store during this response.`,
+    `- If you find something in <memory> or <lists> that a user wants added to a list, say "I found X in your notes — want me to add it?" Do NOT say "I've added it" or use checkmarks. The user must send a follow-up message for the write to happen.`,
+    `- If asked to do something outside your capabilities, say you can't do that yet — do NOT pretend to have done it.`,
   ];
 
   const profileFields = [
