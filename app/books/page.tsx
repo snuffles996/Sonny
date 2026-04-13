@@ -88,7 +88,9 @@ export default function BooksPage() {
   // Bulk select mode
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkStatus, setBulkStatus] = useState<BookStatus>("finished");
+  const [bulkStatus, setBulkStatus] = useState<BookStatus | "">("");
+  const [bulkRating, setBulkRating] = useState<string>("");
+  const [bulkDateFinished, setBulkDateFinished] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
 
   useEffect(() => {
@@ -136,6 +138,9 @@ export default function BooksPage() {
   function toggleSelectMode() {
     setSelectMode((v) => !v);
     setSelectedIds(new Set());
+    setBulkStatus("");
+    setBulkRating("");
+    setBulkDateFinished("");
   }
 
   function toggleSelect(id: string) {
@@ -148,10 +153,18 @@ export default function BooksPage() {
 
   async function applyBulk() {
     if (!selectedIds.size) return;
+    const updates: Partial<Book> = {};
+    if (bulkStatus) updates.status = bulkStatus;
+    if (bulkRating) updates.rating = parseInt(bulkRating);
+    if (bulkDateFinished.trim()) updates.dateFinished = bulkDateFinished.trim();
+    if (!Object.keys(updates).length) return;
     setBulkSaving(true);
-    await Promise.all(Array.from(selectedIds).map((id) => patchBook(id, { status: bulkStatus })));
+    await Promise.all(Array.from(selectedIds).map((id) => patchBook(id, updates)));
     setBulkSaving(false);
     setSelectedIds(new Set());
+    setBulkStatus("");
+    setBulkRating("");
+    setBulkDateFinished("");
     setSelectMode(false);
   }
 
@@ -430,26 +443,48 @@ export default function BooksPage() {
 
       {selectMode && (
         <div className={styles.bulkBar}>
-          <span className={styles.bulkCount}>
-            {selectedIds.size} selected
-          </span>
-          <select
-            className={styles.bulkSelect}
-            value={bulkStatus}
-            onChange={(e) => setBulkStatus(e.target.value as BookStatus)}
-          >
-            <option value="finished">Finished</option>
-            <option value="reading">Reading</option>
-            <option value="want_to_read">Want to read</option>
-            <option value="shelf">On shelf</option>
-          </select>
-          <button
-            className={styles.bulkApply}
-            onClick={applyBulk}
-            disabled={!selectedIds.size || bulkSaving}
-          >
-            {bulkSaving ? "Saving…" : "Apply"}
-          </button>
+          <div className={styles.bulkRow}>
+            <span className={styles.bulkCount}>{selectedIds.size} selected</span>
+            <button
+              className={styles.bulkApply}
+              onClick={applyBulk}
+              disabled={!selectedIds.size || bulkSaving || (!bulkStatus && !bulkRating && !bulkDateFinished)}
+            >
+              {bulkSaving ? "Saving…" : "Apply"}
+            </button>
+          </div>
+          <div className={styles.bulkFields}>
+            <select
+              className={`${styles.bulkSelect} ${bulkStatus ? styles.bulkSelectActive : ""}`}
+              value={bulkStatus}
+              onChange={(e) => setBulkStatus(e.target.value as BookStatus | "")}
+            >
+              <option value="">— status —</option>
+              <option value="finished">Finished</option>
+              <option value="reading">Reading</option>
+              <option value="want_to_read">Want to read</option>
+              <option value="shelf">On shelf</option>
+            </select>
+            <select
+              className={`${styles.bulkSelect} ${bulkRating ? styles.bulkSelectActive : ""}`}
+              value={bulkRating}
+              onChange={(e) => setBulkRating(e.target.value)}
+            >
+              <option value="">— rating —</option>
+              <option value="1">★ 1</option>
+              <option value="2">★★ 2</option>
+              <option value="3">★★★ 3</option>
+              <option value="4">★★★★ 4</option>
+              <option value="5">★★★★★ 5</option>
+            </select>
+            <input
+              className={`${styles.bulkInput} ${bulkDateFinished ? styles.bulkSelectActive : ""}`}
+              type="text"
+              value={bulkDateFinished}
+              placeholder="— date finished —"
+              onChange={(e) => setBulkDateFinished(e.target.value)}
+            />
+          </div>
         </div>
       )}
 
