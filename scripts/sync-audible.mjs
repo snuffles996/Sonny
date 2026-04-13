@@ -50,35 +50,36 @@ function parseSeries(book) {
   };
 }
 
-// Google Books API — free, no key required for basic usage
-async function fetchGoogleBooksCover(title, author) {
+// Open Library search API — free, no key, separate quota from Google Books
+async function fetchOpenLibraryCover(title, author) {
   try {
-    const q = encodeURIComponent(`intitle:${title} inauthor:${author}`);
-    const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&printType=books&langRestrict=en`
-    );
+    const params = new URLSearchParams({ title, author, limit: "1", fields: "cover_i" });
+    const res = await fetch(`https://openlibrary.org/search.json?${params}`, {
+      headers: { "User-Agent": "SonnyApp/1.0 (personal use)" },
+    });
     if (!res.ok) return undefined;
     const data = await res.json();
-    const info = data.items?.[0]?.volumeInfo;
-    const thumb = info?.imageLinks?.thumbnail ?? info?.imageLinks?.smallThumbnail;
-    return thumb ? thumb.replace("http://", "https://") : undefined;
+    const coverId = data.docs?.[0]?.cover_i;
+    return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : undefined;
   } catch {
     return undefined;
   }
 }
 
-// Fetch cover URLs in parallel batches to avoid overwhelming the API
-async function enrichCoversInBatches(books, batchSize = 8) {
+// Fetch cover URLs sequentially with a small delay to respect Open Library rate limits
+async function enrichCoversInBatches(books, batchSize = 5) {
   let enriched = 0;
   for (let i = 0; i < books.length; i += batchSize) {
     const batch = books.slice(i, i + batchSize);
     await Promise.all(
       batch.map(async (book) => {
-        const cover = await fetchGoogleBooksCover(book.title, book.author);
+        const cover = await fetchOpenLibraryCover(book.title, book.author);
         if (cover) { book.coverUrl = cover; enriched++; }
       })
     );
-    process.stdout.write(`\r  Fetching covers... ${Math.min(i + batchSize, books.length)}/${books.length}`);
+    process.stdout.write(`\r  Fetching covers... ${Math.min(i + batchSize, books.length)}/${books.length} (found: ${enriched})`);
+    // Small delay between batches to be polite to Open Library
+    if (i + batchSize < books.length) await new Promise((r) => setTimeout(r, 200));
   }
   process.stdout.write("\n");
   return enriched;
