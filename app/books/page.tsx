@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import type { Book, BookStatus } from "@/lib/books/types";
 import styles from "./books.module.css";
@@ -76,11 +76,84 @@ export default function BooksPage() {
   const [statusFilter, setStatusFilter] = useState<BookStatus | "all">("all");
   const [selected, setSelected] = useState<Book | null>(null);
 
+  // Edit mode (detail overlay)
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editStatus, setEditStatus] = useState<BookStatus>("shelf");
+  const [editRating, setEditRating] = useState<number | undefined>();
+  const [editNotes, setEditNotes] = useState("");
+  const [editDateStarted, setEditDateStarted] = useState("");
+  const [editDateFinished, setEditDateFinished] = useState("");
+
+  // Bulk select mode
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<BookStatus>("finished");
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_KEY);
     if (!t) { router.replace("/chat"); return; }
     setToken(t);
   }, [router]);
+
+  async function patchBook(id: string, updates: Partial<Book>) {
+    if (!token) return;
+    const res = await fetch("/api/library/books", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id, ...updates }),
+    });
+    if (!res.ok) return;
+    const updated = await res.json() as Book;
+    setBooks((prev) => prev.map((b) => b.id === id ? updated : b));
+    if (selected?.id === id) setSelected(updated);
+  }
+
+  function startEdit(book: Book) {
+    setEditStatus(book.status);
+    setEditRating(book.rating);
+    setEditNotes(book.notes ?? "");
+    setEditDateStarted(book.dateStarted ?? "");
+    setEditDateFinished(book.dateFinished ?? "");
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (!selected) return;
+    setSaving(true);
+    await patchBook(selected.id, {
+      status: editStatus,
+      rating: editRating || undefined,
+      notes: editNotes.trim() || undefined,
+      dateStarted: editDateStarted.trim() || undefined,
+      dateFinished: editDateFinished.trim() || undefined,
+    });
+    setSaving(false);
+    setEditing(false);
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function applyBulk() {
+    if (!selectedIds.size) return;
+    setBulkSaving(true);
+    await Promise.all(Array.from(selectedIds).map((id) => patchBook(id, { status: bulkStatus })));
+    setBulkSaving(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+  }
 
   useEffect(() => {
     if (!token) return;
@@ -120,10 +193,21 @@ export default function BooksPage() {
       {selected && (
         <div className={styles.detail}>
           <div className={styles.detailHeader}>
-            <button className={styles.backBtn} onClick={() => setSelected(null)}>
+            <button className={styles.backBtn} onClick={() => { setSelected(null); setEditing(false); }}>
               <ArrowLeft size={18} />
               <span>Books</span>
             </button>
+            {editing ? (
+              <div className={styles.editActions}>
+                <button className={styles.cancelBtn} onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+                <button className={styles.saveBtn} onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+              </div>
+            ) : (
+              <button className={styles.editBtn} onClick={() => startEdit(selected)}>
+                <Pencil size={15} />
+                <span>Edit</span>
+              </button>
+            )}
           </div>
           <div className={styles.detailBody}>
             <div className={styles.detailHero}>
@@ -137,65 +221,132 @@ export default function BooksPage() {
                     {selected.seriesPosition != null ? ` · #${selected.seriesPosition}` : ""}
                   </p>
                 )}
-                <span className={`${styles.badge} ${styles[`badge_${selected.status}`]}`}>
-                  {STATUS_LABEL[selected.status]}
-                </span>
+                {!editing && (
+                  <span className={`${styles.badge} ${styles[`badge_${selected.status}`]}`}>
+                    {STATUS_LABEL[selected.status]}
+                  </span>
+                )}
               </div>
             </div>
 
-            <div className={styles.detailFields}>
-              {selected.rating != null && (
-                <div className={styles.field}>
-                  <span className={styles.fieldLabel}>Rating</span>
-                  <Stars rating={selected.rating} />
-                </div>
-              )}
-              {selected.notes && (
-                <div className={styles.field}>
-                  <span className={styles.fieldLabel}>Notes</span>
-                  <p className={styles.fieldValue}>{selected.notes}</p>
-                </div>
-              )}
-              {selected.recommendedBy && (
-                <div className={styles.field}>
-                  <span className={styles.fieldLabel}>Recommended by</span>
-                  <p className={styles.fieldValue}>{selected.recommendedBy}</p>
-                </div>
-              )}
-              {(selected.dateStarted || selected.dateFinished || selected.dateAdded) && (
-                <div className={styles.field}>
-                  <span className={styles.fieldLabel}>Dates</span>
-                  <div className={styles.dates}>
-                    {selected.dateAdded && <span>Added: {selected.dateAdded}</span>}
-                    {selected.dateStarted && <span>Started: {selected.dateStarted}</span>}
-                    {selected.dateFinished && <span>Finished: {selected.dateFinished}</span>}
+            {editing ? (
+              <div className={styles.editForm}>
+                <label className={styles.editLabel}>
+                  Status
+                  <select
+                    className={styles.editSelect}
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as BookStatus)}
+                  >
+                    <option value="reading">Reading</option>
+                    <option value="want_to_read">Want to read</option>
+                    <option value="finished">Finished</option>
+                    <option value="shelf">On shelf</option>
+                  </select>
+                </label>
+                <label className={styles.editLabel}>
+                  Rating (1–5)
+                  <input
+                    className={styles.editInput}
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={editRating ?? ""}
+                    placeholder="—"
+                    onChange={(e) => setEditRating(e.target.value ? parseInt(e.target.value) : undefined)}
+                  />
+                </label>
+                <label className={styles.editLabel}>
+                  Notes
+                  <textarea
+                    className={`${styles.editInput} ${styles.editTextarea}`}
+                    value={editNotes}
+                    placeholder="Your thoughts…"
+                    rows={3}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                  />
+                </label>
+                <label className={styles.editLabel}>
+                  Date started
+                  <input
+                    className={styles.editInput}
+                    type="text"
+                    value={editDateStarted}
+                    placeholder="e.g. 2024-03-15"
+                    onChange={(e) => setEditDateStarted(e.target.value)}
+                  />
+                </label>
+                <label className={styles.editLabel}>
+                  Date finished
+                  <input
+                    className={styles.editInput}
+                    type="text"
+                    value={editDateFinished}
+                    placeholder="e.g. 2024-04-01"
+                    onChange={(e) => setEditDateFinished(e.target.value)}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className={styles.detailFields}>
+                {selected.rating != null && (
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel}>Rating</span>
+                    <Stars rating={selected.rating} />
                   </div>
-                </div>
-              )}
-              {selected.tags && selected.tags.length > 0 && (
-                <div className={styles.field}>
-                  <span className={styles.fieldLabel}>Tags</span>
-                  <div className={styles.tags}>
-                    {selected.tags.map((tag) => (
-                      <span key={tag} className={styles.tag}>{tag}</span>
-                    ))}
+                )}
+                {selected.notes && (
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel}>Notes</span>
+                    <p className={styles.fieldValue}>{selected.notes}</p>
                   </div>
-                </div>
-              )}
-              {selected.source && (
-                <div className={styles.field}>
-                  <span className={styles.fieldLabel}>Source</span>
-                  <p className={styles.fieldValue}>{selected.source}</p>
-                </div>
-              )}
-            </div>
+                )}
+                {selected.recommendedBy && (
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel}>Recommended by</span>
+                    <p className={styles.fieldValue}>{selected.recommendedBy}</p>
+                  </div>
+                )}
+                {(selected.dateStarted || selected.dateFinished || selected.dateAdded) && (
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel}>Dates</span>
+                    <div className={styles.dates}>
+                      {selected.dateAdded && <span>Added: {selected.dateAdded}</span>}
+                      {selected.dateStarted && <span>Started: {selected.dateStarted}</span>}
+                      {selected.dateFinished && <span>Finished: {selected.dateFinished}</span>}
+                    </div>
+                  </div>
+                )}
+                {selected.tags && selected.tags.length > 0 && (
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel}>Tags</span>
+                    <div className={styles.tags}>
+                      {selected.tags.map((tag) => (
+                        <span key={tag} className={styles.tag}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selected.source && (
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel}>Source</span>
+                    <p className={styles.fieldValue}>{selected.source}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Main list view */}
       <div className={styles.header}>
-        <h1 className={styles.title}>Books</h1>
+        <div className={styles.headerRow}>
+          <h1 className={styles.title}>Books</h1>
+          <button className={styles.selectBtn} onClick={toggleSelectMode}>
+            {selectMode ? "Cancel" : "Select"}
+          </button>
+        </div>
         <input
           className={styles.search}
           type="search"
@@ -226,32 +377,65 @@ export default function BooksPage() {
               : "No books match."}
           </p>
         )}
-        {sorted.map((book) => (
-          <button
-            key={book.id}
-            className={styles.row}
-            onClick={() => setSelected(book)}
-          >
-            <CoverImg src={coverUrl(book)} />
-            <div className={styles.rowBody}>
-              <p className={styles.rowTitle}>{book.title}</p>
-              <p className={styles.rowAuthor}>{book.author}</p>
-              {book.series && (
-                <p className={styles.rowSeries}>
-                  {book.series}
-                  {book.seriesPosition != null ? ` · #${book.seriesPosition}` : ""}
-                </p>
+        {sorted.map((book) => {
+          const isChecked = selectedIds.has(book.id);
+          return (
+            <button
+              key={book.id}
+              className={`${styles.rowSelectable} ${isChecked ? styles.rowSelected : ""}`}
+              onClick={() => selectMode ? toggleSelect(book.id) : setSelected(book)}
+            >
+              {selectMode && (
+                <div className={`${styles.checkbox} ${isChecked ? styles.checkboxChecked : ""}`}>
+                  {isChecked && <span className={styles.checkboxCheckmark}>✓</span>}
+                </div>
               )}
-            </div>
-            <div className={styles.rowRight}>
-              <span className={`${styles.badge} ${styles[`badge_${book.status}`]}`}>
-                {STATUS_LABEL[book.status]}
-              </span>
-              <Stars rating={book.rating} />
-            </div>
-          </button>
-        ))}
+              <CoverImg src={coverUrl(book)} />
+              <div className={styles.rowBody}>
+                <p className={styles.rowTitle}>{book.title}</p>
+                <p className={styles.rowAuthor}>{book.author}</p>
+                {book.series && (
+                  <p className={styles.rowSeries}>
+                    {book.series}
+                    {book.seriesPosition != null ? ` · #${book.seriesPosition}` : ""}
+                  </p>
+                )}
+              </div>
+              <div className={styles.rowRight}>
+                <span className={`${styles.badge} ${styles[`badge_${book.status}`]}`}>
+                  {STATUS_LABEL[book.status]}
+                </span>
+                <Stars rating={book.rating} />
+              </div>
+            </button>
+          );
+        })}
       </div>
+
+      {selectMode && (
+        <div className={styles.bulkBar}>
+          <span className={styles.bulkCount}>
+            {selectedIds.size} selected
+          </span>
+          <select
+            className={styles.bulkSelect}
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value as BookStatus)}
+          >
+            <option value="finished">Finished</option>
+            <option value="reading">Reading</option>
+            <option value="want_to_read">Want to read</option>
+            <option value="shelf">On shelf</option>
+          </select>
+          <button
+            className={styles.bulkApply}
+            onClick={applyBulk}
+            disabled={!selectedIds.size || bulkSaving}
+          >
+            {bulkSaving ? "Saving…" : "Apply"}
+          </button>
+        </div>
+      )}
 
       <BottomNav />
     </div>

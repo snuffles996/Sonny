@@ -249,7 +249,9 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 - `"use client"` components store Bearer token in `localStorage`
 - Bottom nav: `components/BottomNav.tsx` — 3 tabs: Menu (Grid2x2), Chat (MessageCircle), Meals (UtensilsCrossed). Uses `lucide-react` icons.
 - Menu overlay: `components/MenuOverlay.tsx` — slide-up sheet with Settings row + Library section (Books, Movies & TV, Recipes)
-- Library pages: `/books` (`app/books/`), `/movies` (`app/movies/`) — list + detail views
+- Library pages: `/books` (`app/books/`), `/movies` (`app/movies/`) — list + detail views with inline editing
+  - **Books edit mode:** tap any book → "Edit" button in detail header → editable form for status, rating, notes, dateStarted, dateFinished → saves via `PATCH /api/library/books`
+  - **Books bulk select:** "Select" button in list header → check multiple books → status picker + Apply in sticky bar → patches all selected in parallel
 - Settings page: `/settings` (`app/settings/`) — profile editor backed by `GET/PATCH /api/profile`
 - Chat cards: `components/BookCard.tsx`, `components/MovieCard.tsx` — rendered in chat when API returns `cards[]`
 - Skin Log page (`/skinlog`) remains functional but is no longer in bottom nav
@@ -302,7 +304,7 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 - **Weekly briefing cron** — stub at `app/api/cron/route.ts`; send meal plan + calendar summary Monday 8am to Kevin and Kylie.
 - **`PlannedMeal.mealType`** — extend to support breakfast/lunch/dinner type in meal planning.
 - **Kylie's Audible** — `audible_library` intent now searches `library:{userId}:books` automatically per-user. Kylie needs her own Audible export + sync run (`AUDIBLE_USER_ID=kylie node scripts/sync-audible.mjs kylie-library.json`).
-- **Admin interface** — deferred from sonny-changes-spec.md. Dedicated `/admin` page with tabbed table UI for bulk editing books, movies, and recipes.
+- **Admin interface (movies)** — inline edit + bulk select added to `/books`; same pattern not yet applied to `/movies`.
 - **Migrate old Pinecone watchlist/book-list entries to Redis stores** — items saved before the structured library existed live in `sharedMovies` / `shared-books` Pinecone namespaces; a one-time migration would surface them in the `/books` and `/movies` pages.
 - **Book cover fallback quality** — Open Library coverage is incomplete. Consider adding a Google Books cover URL (available in the `searchBooks()` response via `info.imageLinks.thumbnail`) as a secondary source.
 
