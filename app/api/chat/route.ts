@@ -195,7 +195,8 @@ export async function POST(req: NextRequest) {
       const [allBooks, allMovies] = await Promise.all([getBooks(userId), getMovies()]);
       const q = message.toLowerCase();
 
-      const bookMatches = allBooks.filter((b) => {
+      // Title/author/series keyword matching
+      const bookWordMatches = allBooks.filter((b) => {
         const words = [
           ...b.title.toLowerCase().split(/\W+/),
           ...b.author.toLowerCase().split(/\W+/),
@@ -203,8 +204,7 @@ export async function POST(req: NextRequest) {
         ].filter((w) => w.length >= 4);
         return words.length > 0 && words.some((w) => q.includes(w));
       });
-
-      const movieMatches = allMovies.filter((m) => {
+      const movieWordMatches = allMovies.filter((m) => {
         const words = [
           ...m.title.toLowerCase().split(/\W+/),
           ...(m.director ?? "").toLowerCase().split(/\W+/),
@@ -213,16 +213,51 @@ export async function POST(req: NextRequest) {
         return words.length > 0 && words.some((w) => q.includes(w));
       });
 
+      // Status keyword matching — ensures "what do I want to read?" has actual data in context
+      const bookStatusFilters: Array<[RegExp, string]> = [
+        [/want\s+to\s+read|reading\s+list|to[\s-]read/, "want_to_read"],
+        [/currently\s+reading|am\s+reading|still\s+reading/, "reading"],
+        [/finished|have\s+i\s+read|books?\s+i.ve\s+read|already\s+read/, "finished"],
+        [/on\s+(my\s+)?shelf/, "shelf"],
+      ];
+      const movieStatusFilters: Array<[RegExp, string]> = [
+        [/watchlist|want\s+to\s+watch|to[\s-]watch/, "watchlist"],
+        [/currently\s+watching|am\s+watching|still\s+watching/, "watching"],
+        [/have\s+i\s+(seen|watched)|movies?\s+i.ve\s+(seen|watched)|already\s+(seen|watched)/, "seen"],
+      ];
+
+      const bookMatchIds = new Set(bookWordMatches.map((b) => b.id));
+      const bookMatches = [...bookWordMatches];
+      for (const [pattern, status] of bookStatusFilters) {
+        if (pattern.test(q)) {
+          for (const b of allBooks.filter((b) => b.status === status)) {
+            if (!bookMatchIds.has(b.id)) { bookMatches.push(b); bookMatchIds.add(b.id); }
+          }
+        }
+      }
+
+      const movieMatchIds = new Set(movieWordMatches.map((m) => m.id));
+      const movieMatches = [...movieWordMatches];
+      for (const [pattern, status] of movieStatusFilters) {
+        if (pattern.test(q)) {
+          for (const m of allMovies.filter((m) => m.status === status)) {
+            if (!movieMatchIds.has(m.id)) { movieMatches.push(m); movieMatchIds.add(m.id); }
+          }
+        }
+      }
+
       const queryContext = contextNotes ? [...contextNotes] : [];
       const queryCards: ChatCard[] = [];
 
       if (bookMatches.length > 0) {
-        queryContext.push(`Books from your library that may be relevant:\n${JSON.stringify(bookMatches, null, 2)}`);
-        queryCards.push(...bookMatches.slice(0, 3).map((b): ChatCard => ({
+        const shown = bookMatches.slice(0, 30);
+        const extra = bookMatches.length > 30 ? ` (${bookMatches.length - 30} more not shown)` : "";
+        queryContext.push(`Books from your library that may be relevant${extra}:\n${JSON.stringify(shown, null, 2)}`);
+        queryCards.push(...shown.slice(0, 3).map((b): ChatCard => ({
           type: "book",
           title: b.title,
           subtitle: `by ${b.author}`,
-          coverUrl: b.coverUrl ?? (b.audibleAsin ? `https://m.media-amazon.com/images/P/${b.audibleAsin}.01._SL500_.jpg` : b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
+          coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
           status: b.status,
           inLibrary: true,
           actions: [],
@@ -230,8 +265,10 @@ export async function POST(req: NextRequest) {
       }
 
       if (movieMatches.length > 0) {
-        queryContext.push(`Movies/TV from your library that may be relevant:\n${JSON.stringify(movieMatches, null, 2)}`);
-        queryCards.push(...movieMatches.slice(0, 3).map((m): ChatCard => ({
+        const shown = movieMatches.slice(0, 30);
+        const extra = movieMatches.length > 30 ? ` (${movieMatches.length - 30} more not shown)` : "";
+        queryContext.push(`Movies/TV from your library that may be relevant${extra}:\n${JSON.stringify(shown, null, 2)}`);
+        queryCards.push(...shown.slice(0, 3).map((m): ChatCard => ({
           type: "movie",
           title: m.title,
           subtitle: [m.year ? String(m.year) : null, m.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
@@ -668,7 +705,7 @@ export async function POST(req: NextRequest) {
             type: "book",
             title: b.title,
             subtitle: `by ${b.author}`,
-            coverUrl: b.coverUrl ?? (b.audibleAsin ? `https://m.media-amazon.com/images/P/${b.audibleAsin}.01._SL500_.jpg` : b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
+            coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
             status: b.status,
             inLibrary: true,
             actions: [],
