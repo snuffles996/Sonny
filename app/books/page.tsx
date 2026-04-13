@@ -153,14 +153,23 @@ export default function BooksPage() {
   }
 
   async function applyBulk() {
-    if (!selectedIds.size) return;
+    if (!selectedIds.size || !token) return;
     const updates: Partial<Book> = {};
     if (bulkStatus !== null) updates.status = bulkStatus;
     if (bulkRating !== null) updates.rating = bulkRating;
     if (bulkDateFinished !== null && bulkDateFinished.trim()) updates.dateFinished = bulkDateFinished.trim();
     if (!Object.keys(updates).length) return;
     setBulkSaving(true);
-    await Promise.all(Array.from(selectedIds).map((id) => patchBook(id, updates)));
+    const res = await fetch("/api/library/books/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ids: Array.from(selectedIds), updates }),
+    });
+    if (res.ok) {
+      const updatedBooks = await res.json() as Book[];
+      const updatedMap = new Map(updatedBooks.map((b) => [b.id, b]));
+      setBooks((prev) => prev.map((b) => updatedMap.get(b.id) ?? b));
+    }
     setBulkSaving(false);
     setSelectedIds(new Set());
     setBulkStatus(null);
