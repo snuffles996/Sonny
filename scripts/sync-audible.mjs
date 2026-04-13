@@ -41,7 +41,6 @@ function makeId(asin) {
 
 function parseSeries(book) {
   if (!book.series) return { series: undefined, seriesPosition: undefined };
-  // audible-cli exports series as an array of objects or strings
   const first = Array.isArray(book.series) ? book.series[0] : null;
   if (!first) return { series: undefined, seriesPosition: undefined };
   if (typeof first === "string") return { series: first, seriesPosition: undefined };
@@ -51,10 +50,38 @@ function parseSeries(book) {
   };
 }
 
-function inferStatus(book) {
-  const pct = book.percent_complete ?? book.percentComplete;
-  if (pct != null && Number(pct) >= 99) return "finished";
-  return "shelf";
+// Google Books API — free, no key required for basic usage
+async function fetchGoogleBooksCover(title, author) {
+  try {
+    const q = encodeURIComponent(`intitle:${title} inauthor:${author}`);
+    const res = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&printType=books&langRestrict=en`
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const info = data.items?.[0]?.volumeInfo;
+    const thumb = info?.imageLinks?.thumbnail ?? info?.imageLinks?.smallThumbnail;
+    return thumb ? thumb.replace("http://", "https://") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Fetch cover URLs in parallel batches to avoid overwhelming the API
+async function enrichCoversInBatches(books, batchSize = 8) {
+  let enriched = 0;
+  for (let i = 0; i < books.length; i += batchSize) {
+    const batch = books.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (book) => {
+        const cover = await fetchGoogleBooksCover(book.title, book.author);
+        if (cover) { book.coverUrl = cover; enriched++; }
+      })
+    );
+    process.stdout.write(`\r  Fetching covers... ${Math.min(i + batchSize, books.length)}/${books.length}`);
+  }
+  process.stdout.write("\n");
+  return enriched;
 }
 
 async function main() {
@@ -68,6 +95,7 @@ async function main() {
 
   let added = 0;
   let updated = 0;
+  const newBooks = [];
 
   for (const book of books) {
     const asin = book.asin;
@@ -75,44 +103,43 @@ async function main() {
 
     const now = new Date().toISOString();
     const { series, seriesPosition } = parseSeries(book);
-    const inferredStatus = inferStatus(book);
 
     if (byAsin.has(asin)) {
       // Update existing record — never overwrite user-set fields
-      const existing = byAsin.get(asin);
-      const updated_record = {
-        ...existing,
-        lastSyncedAt: now,
-        // Only update status if user hasn't manually set it beyond "shelf"
-        ...(existing.status === "shelf" && inferredStatus === "finished"
-          ? { status: "finished", dateFinished: existing.dateFinished ?? now.slice(0, 10) }
-          : {}),
-      };
-      byAsin.set(asin, updated_record);
+      const rec = byAsin.get(asin);
+      byAsin.set(asin, { ...rec, lastSyncedAt: now });
       updated++;
     } else {
-      // New record
+      const authorStr = Array.isArray(book.authors)
+        ? book.authors.join(", ")
+        : (book.authors ?? "Unknown");
       const newBook = {
         id: makeId(asin),
         title: book.title ?? "Unknown",
-        author: Array.isArray(book.authors)
-          ? book.authors.join(", ")
-          : (book.authors ?? "Unknown"),
+        author: authorStr,
         series,
         seriesPosition,
         audibleAsin: asin,
-        status: inferredStatus,
+        status: "shelf",
         source: "audible",
-        coverUrl: book.cover_url ?? book.product_images?.["500"] ?? undefined,
+        coverUrl: undefined,
         dateAdded: book.purchase_date?.slice(0, 10) ?? now.slice(0, 10),
-        ...(inferredStatus === "finished"
-          ? { dateFinished: now.slice(0, 10) }
-          : {}),
         lastSyncedAt: now,
       };
       byAsin.set(asin, newBook);
+      newBooks.push(newBook);
       added++;
     }
+  }
+
+  // Also backfill covers for existing books that don't have one
+  const missingCover = Array.from(byAsin.values()).filter((b) => !b.coverUrl);
+  const toEnrich = missingCover;
+
+  if (toEnrich.length > 0) {
+    console.log(`Fetching Google Books covers for ${toEnrich.length} books...`);
+    const enriched = await enrichCoversInBatches(toEnrich);
+    console.log(`  Covers found: ${enriched}/${toEnrich.length}`);
   }
 
   const finalLibrary = Array.from(byAsin.values());

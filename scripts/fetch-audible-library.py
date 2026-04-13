@@ -42,7 +42,7 @@ def main():
         response = client.get(
             "library",
             num_results=1000,
-            response_groups="product_details,series,contributors,media,rating,product_images,listening_status",
+            response_groups="product_details,series,contributors,media,rating",
         )
 
     items = response.get("items", [])
@@ -59,18 +59,6 @@ def main():
             if ladder.get("ladder")
         ]
 
-        product_images = item.get("product_images") or {}
-        cover_url = (
-            product_images.get("500")
-            or product_images.get("256")
-            or product_images.get("128")
-            or ""
-        )
-
-        # listening_status may or may not be returned depending on Audible API version
-        listening_status = item.get("listening_status") or {}
-        percent_complete = listening_status.get("percent_complete")
-
         books.append(
             {
                 "asin": item.get("asin", ""),
@@ -82,8 +70,6 @@ def main():
                 "series": series,
                 "categories": categories,
                 "publisher": item.get("publisher_name", ""),
-                "cover_url": cover_url,
-                "percent_complete": percent_complete,
                 "merchandising_summary": clean_html(item.get("merchandising_summary", "")),
                 "publisher_summary": clean_html(item.get("publisher_summary", "")),
             }
