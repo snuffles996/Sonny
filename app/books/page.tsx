@@ -24,14 +24,20 @@ const STATUS_LABEL: Record<BookStatus, string> = {
   shelf: "On shelf",
 };
 
+function asinCover(asin: string): string {
+  return `https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;
+}
+
 function coverUrl(book: Book): string | null {
   if (book.coverUrl) return book.coverUrl;
+  if (book.audibleAsin) return asinCover(book.audibleAsin);
   if (book.isbn) return `https://covers.openlibrary.org/b/isbn/${book.isbn}-M.jpg`;
   return null;
 }
 
 function largeCoverUrl(book: Book): string | null {
-  if (book.coverUrl) return book.coverUrl.replace(/-M\.jpg$/, "-L.jpg");
+  if (book.coverUrl) return book.coverUrl;
+  if (book.audibleAsin) return asinCover(book.audibleAsin);
   if (book.isbn) return `https://covers.openlibrary.org/b/isbn/${book.isbn}-L.jpg`;
   return null;
 }

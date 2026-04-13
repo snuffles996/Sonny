@@ -191,26 +191,59 @@ export async function POST(req: NextRequest) {
       break;
     }
     case "query": {
-      // Search structured book library — fast Redis read, injects as context if matches found
-      const allBooks = await getBooks(userId);
+      // Search structured libraries — parallel Redis reads, inject as context + cards if matches found
+      const [allBooks, allMovies] = await Promise.all([getBooks(userId), getMovies()]);
       const q = message.toLowerCase();
+
       const bookMatches = allBooks.filter((b) => {
-        const words = b.title.toLowerCase().split(/\W+/).filter((w) => w.length >= 4);
+        const words = [
+          ...b.title.toLowerCase().split(/\W+/),
+          ...b.author.toLowerCase().split(/\W+/),
+          ...(b.series ?? "").toLowerCase().split(/\W+/),
+        ].filter((w) => w.length >= 4);
         return words.length > 0 && words.some((w) => q.includes(w));
       });
+
+      const movieMatches = allMovies.filter((m) => {
+        const words = [
+          ...m.title.toLowerCase().split(/\W+/),
+          ...(m.director ?? "").toLowerCase().split(/\W+/),
+          ...(m.tags ?? []).join(" ").toLowerCase().split(/\W+/),
+        ].filter((w) => w.length >= 4);
+        return words.length > 0 && words.some((w) => q.includes(w));
+      });
+
       const queryContext = contextNotes ? [...contextNotes] : [];
+      const queryCards: ChatCard[] = [];
+
       if (bookMatches.length > 0) {
         queryContext.push(`Books from your library that may be relevant:\n${JSON.stringify(bookMatches, null, 2)}`);
-        cards = bookMatches.slice(0, 3).map((b): ChatCard => ({
+        queryCards.push(...bookMatches.slice(0, 3).map((b): ChatCard => ({
           type: "book",
           title: b.title,
           subtitle: `by ${b.author}`,
-          coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
+          coverUrl: b.coverUrl ?? (b.audibleAsin ? `https://m.media-amazon.com/images/P/${b.audibleAsin}.01._SL500_.jpg` : b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
           status: b.status,
           inLibrary: true,
           actions: [],
-        }));
+        })));
       }
+
+      if (movieMatches.length > 0) {
+        queryContext.push(`Movies/TV from your library that may be relevant:\n${JSON.stringify(movieMatches, null, 2)}`);
+        queryCards.push(...movieMatches.slice(0, 3).map((m): ChatCard => ({
+          type: "movie",
+          title: m.title,
+          subtitle: [m.year ? String(m.year) : null, m.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
+          coverUrl: m.coverUrl,
+          status: m.status,
+          inLibrary: true,
+          actions: [],
+        })));
+      }
+
+      if (queryCards.length > 0) cards = queryCards;
+
       reply = await generateResponse(message, profile, recentTurns, queryContext, listContext);
       break;
     }
@@ -635,7 +668,7 @@ export async function POST(req: NextRequest) {
             type: "book",
             title: b.title,
             subtitle: `by ${b.author}`,
-            coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
+            coverUrl: b.coverUrl ?? (b.audibleAsin ? `https://m.media-amazon.com/images/P/${b.audibleAsin}.01._SL500_.jpg` : b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
             status: b.status,
             inLibrary: true,
             actions: [],
