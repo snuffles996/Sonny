@@ -59,7 +59,7 @@ const INTENT_DESCRIPTIONS = [
   "meal_plan_grocery: user wants a grocery list, shopping list, or to know what ingredients to buy for their meals",
   "meal_plan_clear: user wants to clear, reset, or start over with the meal plan",
   "list_write: user wants to add one or more discrete items to a named list. Triggered by: 'add X to my Y list', 'put X on the Costco list', 'I need to grab X', store names (Costco, Target, Trader Joe's, etc.) combined with item nouns. NOT a note. NOT a recipe. Individual buyable or doable items. List intents take priority over save_note or query when a list name or store name appears alongside item-like nouns.",
-  "list_read: user wants to hear back the contents of a named list. Triggered by: 'what's on my X list', 'read me my Costco list', 'show me my grocery list'. NOT triggered by questions about saved notes or memory.",
+  "list_read: user wants to see a list or find out what lists exist. Triggered by: 'what's on my X list', 'read me my Costco list', 'show me my grocery list', 'what lists do I have', 'what are my lists', 'show all my lists'. When asking about a SPECIFIC list, set listName. When asking what lists exist (no specific list named), omit listName entirely. NOT triggered by questions about saved notes or memory.",
   "categorization_correction: user is correcting where an item was categorized. Triggered by: 'X should be in Y', 'X doesn't belong in Y', 'move X to Y', 'X goes in Y not Z'. Extract the item name and the correct category.",
   "staples_update: user wants to add or remove items from the shared pantry staples list. Triggered by: 'add X to my staples', 'move X to pantry staples', 'X should be a staple', 'add to pantry staples', 'items to move to pantry staples', 'I always have X', 'X is always in my pantry', 'remove X from staples', 'I'm out of X' (when X is a pantry item). IMPORTANT: if the message contains a section headed 'items to move to pantry staples' or 'add to staples' followed by a list, classify as staples_update and extract ALL listed items. Extract action (add or remove) and items.",
   "staples_read: user wants to see the pantry staples list. Triggered by: 'what are my staples', 'show me my pantry staples', 'what do I always have'.",
@@ -112,7 +112,7 @@ export async function classifyIntent(message: string): Promise<ClassificationRes
             },
             listName: {
               type: "string",
-              description: "Normalized lowercase list name. Map store names to canonical form: 'costco run' → 'costco', 'grocery list' → 'grocery', 'trader joes' → 'traderjoes'. Always lowercase, no spaces.",
+              description: "Normalized lowercase list name for a SPECIFIC list. Map store names to canonical form: 'costco run' → 'costco', 'grocery list' → 'grocery', 'trader joes' → 'traderjoes'. Always lowercase, no spaces. OMIT this field when the user is asking what lists exist (e.g. 'what lists do I have', 'what are my lists') — do not set it to 'all' or any other value.",
             },
             items: {
               type: "array",
