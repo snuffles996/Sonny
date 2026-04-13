@@ -76,8 +76,8 @@ const FOLK_UNITS = new Set([
 ]);
 
 // Words that appear as a "unit" in some recipe formats but mean "each" / "count".
-// e.g. "1 unit lime", "2 each scallions" — strip the word and treat as unitless.
-const COUNT_WORDS = new Set(["unit", "units", "each"]);
+// e.g. "1 unit lime", "2 each scallions", "2 piece scallions" — strip and treat as unitless.
+const COUNT_WORDS = new Set(["unit", "units", "each", "piece", "pieces"]);
 
 const VOLUME_TO_ML: Record<string, number> = {
   tsp: 5, tbsp: 15, cup: 240, ml: 1, l: 1000,
@@ -211,7 +211,8 @@ function parseIngredientLine(line: string, recipeSlug: string, recipeName: strin
     .replace(/\*+$/, "")            // strip trailing asterisks like "butter*"
     .replace(/,\s*$/, "")           // strip trailing comma
     .replace(/[¼½¾⅓⅔⅛⅜⅝⅞]/g, (c) => UNICODE_FRACTIONS[c] ?? c) // "¼" → "1/4"
-    .replace(/(\d)([a-zA-Z])/g, "$1 $2")  // "2tbsp" → "2 tbsp"
+    .replace(/\bfl\.?\s+oz\.?\b/gi, "oz")                        // "fl oz" → "oz"
+    .replace(/(\d)([a-zA-Z])/g, "$1 $2")                         // "2tbsp" → "2 tbsp"
     .trim()
     .toLowerCase();
 

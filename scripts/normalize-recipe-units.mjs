@@ -39,21 +39,42 @@ const UNIT_ALIASES = {
 };
 
 // Matches ingredient lines: optional bullet, then qty unit name
-// Captures the unit word to check against UNIT_ALIASES
-const INGREDIENT_LINE_RE = /^([-*•]\s*)((?:\d+\s+)?\d+(?:[./]\d+)?)\s+([a-zA-Z]+\.?)\s+(.+)$/;
+const UNICODE_FRACTIONS = {
+  "¼": "1/4", "½": "1/2", "¾": "3/4",
+  "⅓": "1/3", "⅔": "2/3",
+  "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+};
 
+// Normalizes a single ingredient line:
+// 1. Unicode fractions → ASCII  (¼ → 1/4)
+// 2. fl oz → oz
+// 3. Long-form unit → canonical short form  (tablespoons → tbsp)
 function normalizeLine(line) {
-  const match = line.match(INGREDIENT_LINE_RE);
-  if (!match) return { line, changed: false };
+  let result = line;
+  let changed = false;
 
-  const [, bullet, qty, rawUnit, rest] = match;
-  const unitClean = rawUnit.replace(/\.$/, "").toLowerCase();
-  const canonical = UNIT_ALIASES[unitClean];
+  // 1. Unicode fractions
+  const withAscii = result.replace(/[¼½¾⅓⅔⅛⅜⅝⅞]/g, c => UNICODE_FRACTIONS[c] ?? c);
+  if (withAscii !== result) { result = withAscii; changed = true; }
 
-  if (!canonical || canonical === unitClean) return { line, changed: false };
+  // 2. fl oz → oz
+  const withFlOz = result.replace(/\bfl\.?\s+oz\.?\b/gi, "oz");
+  if (withFlOz !== result) { result = withFlOz; changed = true; }
 
-  const normalized = `${bullet}${qty} ${canonical} ${rest}`;
-  return { line: normalized, changed: true };
+  // 3. Long-form unit normalization (requires qty unit name pattern)
+  const INGREDIENT_LINE_RE = /^([-*•]\s*)((?:\d+\s+)?\d+(?:[./]\d+)?)\s+([a-zA-Z]+\.?)\s+(.+)$/;
+  const match = result.match(INGREDIENT_LINE_RE);
+  if (match) {
+    const [, bullet, qty, rawUnit, rest] = match;
+    const unitClean = rawUnit.replace(/\.$/, "").toLowerCase();
+    const canonical = UNIT_ALIASES[unitClean];
+    if (canonical && canonical !== unitClean) {
+      result = `${bullet}${qty} ${canonical} ${rest}`;
+      changed = true;
+    }
+  }
+
+  return { line: result, changed };
 }
 
 function normalizeIngredientSection(content) {
