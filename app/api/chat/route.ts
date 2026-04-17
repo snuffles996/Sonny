@@ -178,10 +178,10 @@ export async function POST(req: NextRequest) {
 
   // ── Confirmed action early return ─────────────────────────────────────────────
   // Client sends confirmAction when the user taps Confirm on a pending action.
+  // Don't persist these turns — "confirmed" + "Added X as watching" are mechanical,
+  // not conversational, and would eat session window slots.
   if (confirmAction) {
     const result = await executeConfirmedAction(confirmAction, userId);
-    await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
-    await appendTurn(userId, { role: "assistant", content: result.reply, timestamp: Date.now() });
     return NextResponse.json({ reply: result.reply });
   }
 
