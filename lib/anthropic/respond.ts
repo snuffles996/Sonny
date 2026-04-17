@@ -175,6 +175,7 @@ When you want to take an action (add/update a movie or book, save a note, add to
 
 Key rules:
 - If the user mentions watching/reading something → check the library lists above first. If it's already there, call propose_action with movie_update/book_update. If not, call propose_action with movie_add/book_add including status and any episode/season info.
+- To remove a movie or book from the library, use movie_remove or book_remove with the title. Never use movie_update with a fake "removed" status.
 - Always call propose_action rather than narrating what you're going to do. "I'll add it" with no tool call = nothing happens.
 - confirmationRequired: false when the user is explicitly stating a fact about themselves: "I've been watching X", "I finished X", "I'm reading X", "I just watched X", "I started X". They're telling you — just do it.
 - confirmationRequired: true when the user is asking about something or the title/intent is ambiguous: "what should I watch?", "is X good?", "tell me about X", "have I seen X?". They might just be curious, not requesting an update.
@@ -189,11 +190,11 @@ const PROPOSE_ACTION_TOOL = {
     properties: {
       type: {
         type: "string",
-        enum: ["save_note", "list_write", "list_add_item", "calendar_write", "movie_update", "movie_add", "book_update", "book_add", "recipe_add"],
+        enum: ["save_note", "list_write", "list_add_item", "calendar_write", "movie_update", "movie_add", "movie_remove", "book_update", "book_add", "book_remove", "recipe_add"],
       },
       payload: {
         type: "object",
-        description: "Action-specific fields. movie_add: {title, status?, currentSeason?, currentEpisode?}. movie_update: {title, status?, rating?, currentSeason?, currentEpisode?}. book_add: {title, author?, status?}. book_update: {title, status?, rating?}. save_note: {text}. list_write: {listName, items[]}. list_add_item: {listName, item}. calendar_write: {title, dateISO, timeLocal?, durationMinutes?, allDay, location?}. recipe_add: {url}.",
+        description: "Action-specific fields. movie_add: {title, status?, currentSeason?, currentEpisode?}. movie_update: {title, status?, rating?, currentSeason?, currentEpisode?}. movie_remove: {title}. book_add: {title, author?, status?}. book_update: {title, status?, rating?}. book_remove: {title}. save_note: {text}. list_write: {listName, items[]}. list_add_item: {listName, item}. calendar_write: {title, dateISO, timeLocal?, durationMinutes?, allDay, location?}. recipe_add: {url}.",
         additionalProperties: true,
       },
       confirmationRequired: {

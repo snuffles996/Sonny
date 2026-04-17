@@ -1,8 +1,8 @@
 import type { PendingAction } from "./actions";
 import type { UserId } from "@/lib/profile/types";
 import { saveNote } from "@/lib/pinecone/records";
-import { getMovies, addMovie, updateMovie } from "@/lib/movies/store";
-import { getBooks, addBook, updateBook } from "@/lib/books/store";
+import { getMovies, addMovie, updateMovie, deleteMovie } from "@/lib/movies/store";
+import { getBooks, addBook, updateBook, deleteBook } from "@/lib/books/store";
 import { searchMoviesAndTV } from "@/lib/movies/search";
 import { searchBooks } from "@/lib/books/search";
 import { addItemToList, isGroceryList } from "@/lib/lists/addItem";
@@ -14,6 +14,18 @@ import type { Book } from "@/lib/books/types";
 
 function normalizeTitle(t: string): string {
   return t.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Returns true if the TMDb result title is a plausible match for the requested title.
+// Prevents blindly adding the wrong show when TMDb returns a fuzzy result.
+function titlesRoughlyMatch(requested: string, found: string): boolean {
+  const words = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter((w) => w.length > 2);
+  const reqWords = words(requested);
+  const foundWords = words(found);
+  if (reqWords.length === 0) return true;
+  const overlap = reqWords.filter((w) => foundWords.includes(w));
+  return overlap.length >= Math.ceil(reqWords.length * 0.5);
 }
 
 function findMovieByTitle(movies: Movie[], title: string): Movie | undefined {
@@ -117,6 +129,9 @@ export async function executeConfirmedAction(
       const results = await searchMoviesAndTV(title).catch(() => []);
       const top = results[0];
       if (!top) return { reply: `Couldn't find *${title}* on TMDb. Try the full title.` };
+      if (!titlesRoughlyMatch(title, top.title)) {
+        return { reply: `TMDb returned *${top.title}* for "${title}" — that doesn't look right. Can you double-check the title?` };
+      }
 
       const status = (payload.status as Movie["status"] | undefined) ?? "watchlist";
       const currentSeason = payload.currentSeason as number | undefined;
@@ -163,6 +178,16 @@ export async function executeConfirmedAction(
       return { reply: `Updated *${book.title}*.${statusPart}` };
     }
 
+    case "movie_remove": {
+      const title = payload.title as string | undefined;
+      if (!title) return { reply: "I couldn't remove that — no title was provided." };
+      const movies = await getMovies();
+      const movie = findMovieByTitle(movies, title);
+      if (!movie) return { reply: `Couldn't find *${title}* in your library.` };
+      await deleteMovie(movie.id);
+      return { reply: `Removed *${movie.title}* from your library.` };
+    }
+
     case "book_add": {
       const title = payload.title as string | undefined;
       const author = payload.author as string | undefined;
@@ -184,6 +209,16 @@ export async function executeConfirmedAction(
       };
       await addBook(userId, book);
       return { reply: `Added *${book.title}* by ${book.author} to your library.` };
+    }
+
+    case "book_remove": {
+      const title = payload.title as string | undefined;
+      if (!title) return { reply: "I couldn't remove that — no title was provided." };
+      const books = await getBooks(userId);
+      const book = findBookByTitle(books, title);
+      if (!book) return { reply: `Couldn't find *${title}* in your library.` };
+      await deleteBook(userId, book.id);
+      return { reply: `Removed *${book.title}* from your library.` };
     }
 
     case "list_write": {

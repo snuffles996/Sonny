@@ -5,8 +5,10 @@ export type ActionType =
   | "calendar_write"
   | "movie_update"
   | "movie_add"
+  | "movie_remove"
   | "book_update"
   | "book_add"
+  | "book_remove"
   | "recipe_add";
 
 export interface PendingAction {
