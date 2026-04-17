@@ -747,6 +747,58 @@ export async function POST(req: NextRequest) {
     });
     reply = result.reply;
     pendingAction = result.pendingAction ?? undefined;
+
+    // Generate preview cards for pending movie_add / book_add proposals so the
+    // user sees a visual card alongside the "Want me to add it?" message.
+    if (pendingAction?.type === "movie_add") {
+      const title = pendingAction.payload.title as string | undefined;
+      if (title) {
+        try {
+          const [results, library] = await Promise.all([
+            searchMoviesAndTV(title).catch(() => []),
+            getMovies(),
+          ]);
+          if (results.length > 0) {
+            cards = results.slice(0, 3).map((r): ChatCard => {
+              const inLib = !!findMovieByTitle(library, r.title);
+              return {
+                type: "movie",
+                title: r.title,
+                subtitle: [r.releaseDate ? String(new Date(r.releaseDate).getFullYear()) : null, r.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
+                coverUrl: r.posterUrl ?? undefined,
+                inLibrary: inLib,
+                actions: [],
+              };
+            });
+          }
+        } catch { /* non-fatal — cards are optional */ }
+      }
+    } else if (pendingAction?.type === "book_add") {
+      const title = pendingAction.payload.title as string | undefined;
+      const author = pendingAction.payload.author as string | undefined;
+      if (title) {
+        try {
+          const [results, library] = await Promise.all([
+            searchBooks(author ? `${title} ${author}` : title).catch(() => []),
+            getBooks(userId),
+          ]);
+          if (results.length > 0) {
+            cards = results.slice(0, 3).map((r): ChatCard => {
+              const inLib = !!findBookByTitle(library, r.title);
+              const coverUrl = r.coverUrl ?? (r.isbn ? `https://covers.openlibrary.org/b/isbn/${r.isbn}-M.jpg` : undefined);
+              return {
+                type: "book",
+                title: r.title,
+                subtitle: r.authors.length > 0 ? `by ${r.authors[0]}` : "",
+                coverUrl,
+                inLibrary: inLib,
+                actions: [],
+              };
+            });
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
   }
 
   // Persist turns sequentially to preserve order
