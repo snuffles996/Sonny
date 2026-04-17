@@ -158,6 +158,46 @@
   margin: 0.5em 0 0.25em;
 }
 
+/* Confirm bar */
+.confirmBar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0;
+}
+
+.confirmButton {
+  background: #fff;
+  color: #000;
+  border: none;
+  border-radius: 20px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.confirmButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cancelButton {
+  background: transparent;
+  color: #666;
+  border: 1px solid #333;
+  border-radius: 20px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.cancelButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Input bar */
 .inputBar {
   display: flex;

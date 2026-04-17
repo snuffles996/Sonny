@@ -1,5 +1,5 @@
 // POST /api/chat
-// Body: { message: string }
+// Body: { message: string; confirmAction?: PendingAction }
 // Header: Authorization: Bearer <KEVIN_SECRET or KYLIE_SECRET>
 
 import { NextRequest, NextResponse } from "next/server";
@@ -9,10 +9,9 @@ import { classifyIntent } from "@/lib/anthropic/classify";
 import { handleListWrite, handleListRead } from "@/lib/lists/handler";
 import { addOverride } from "@/lib/lists/overrides";
 import { addToListIndex } from "@/lib/lists/index";
-import { searchUserLists } from "@/lib/lists/search";
 import { addItemToList, isGroceryList, enrichmentSourceForList } from "@/lib/lists/addItem";
 import { addStaples, removeStaples, getPantryStaples } from "@/lib/pantry/store";
-import { generateResponse } from "@/lib/anthropic/respond";
+import { generateResponse, generateConversationalResponse } from "@/lib/anthropic/respond";
 import { getRecentTurns, appendTurn } from "@/lib/session/kv";
 import { saveNote, searchNotes } from "@/lib/pinecone/records";
 import { saveProfile } from "@/lib/profile/store";
@@ -50,6 +49,36 @@ import {
   getPendingRecommender,
   clearPendingRecommender,
 } from "@/lib/notes/pendingRecommender";
+import { loadBroadContext } from "@/lib/anthropic/context";
+import { executeConfirmedAction } from "@/lib/anthropic/execute";
+import type { PendingAction } from "@/lib/anthropic/actions";
+
+// Intents handled on the structural fast-path (Haiku classify → existing handler).
+// Everything else falls through to the Claude-first conversational path.
+const STRUCTURAL_INTENTS = new Set([
+  "sports_query",
+  "sports_score",
+  "sports_schedule",
+  "sports_standings",
+  "sports_player_stats",
+  "sports_calendar_bulk",
+  "meal_plan_create",
+  "meal_plan_swap",
+  "meal_plan_grocery",
+  "meal_plan_clear",
+  "staples_read",
+  "staples_update",
+  "profile_update",
+  "calendar_read",
+  "library_stats",
+  "list_read",
+  "categorization_correction",
+  "web_search",
+  "recipe_add",
+  "audible_library",
+  "book_search",
+  "movie_query",
+]);
 
 // ── Recommender helpers ───────────────────────────────────────────────────────
 
@@ -141,23 +170,20 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const message: string = body?.message?.trim();
+  const confirmAction: PendingAction | undefined = body?.confirmAction;
+
   if (!message) {
     return NextResponse.json({ error: "message required" }, { status: 400 });
   }
 
-  // Load profile, session turns, intent classification, context search, and list search all in parallel
-  const [profile, recentTurns, classification, contextNotes, listContext] = await Promise.all([
-    getProfile(userId),
-    getRecentTurns(userId),
-    classifyIntent(message),
-    searchNotes(userId, message),       // speculative — used if intent is query
-    searchUserLists(userId, message),   // speculative — injected alongside memory
-  ]);
-  const intent = classification.intent;
-
-  let reply: string;
-  let saved = false;
-  let cards: ChatCard[] | undefined;
+  // ── Confirmed action early return ─────────────────────────────────────────────
+  // Client sends confirmAction when the user taps Confirm on a pending action.
+  if (confirmAction) {
+    const result = await executeConfirmedAction(confirmAction, userId);
+    await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
+    await appendTurn(userId, { role: "assistant", content: result.reply, timestamp: Date.now() });
+    return NextResponse.json({ reply: result.reply });
+  }
 
   // ── Pending recommender follow-up (intercepts before intent switch) ──────────
   // If the last response asked "who recommended it?" and the user replied with a
@@ -167,123 +193,30 @@ export async function POST(req: NextRequest) {
     await clearPendingRecommender(userId);
     const enrichedText = `${pendingRec.noteText} (Recommended by: ${message.trim()})`;
     await saveNote(userId, enrichedText);
-    saved = true;
-    reply = `Got it — noted that ${message.trim()} recommended it.`;
+    const recReply = `Got it — noted that ${message.trim()} recommended it.`;
     await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
-    await appendTurn(userId, { role: "assistant", content: reply, timestamp: Date.now() });
-    return NextResponse.json({ reply, intent, saved });  // no cards on recommender follow-up
+    await appendTurn(userId, { role: "assistant", content: recReply, timestamp: Date.now() });
+    return NextResponse.json({ reply: recReply, intent: "save_note", saved: true });
   }
   if (pendingRec) await clearPendingRecommender(userId); // stale — long message means new topic
 
-  switch (intent) {
-    case "save_note": {
-      await saveNote(userId, message);
-      saved = true;
-      const recommender = extractRecommender(message);
-      if (recommender) {
-        reply = `Saved — noted that ${recommender} recommended it.`;
-      } else if (isMediaContent(message)) {
-        await savePendingRecommender(userId, message);
-        reply = "Got it, saved. Who recommended it?";
-      } else {
-        reply = "Got it, saved to your memory.";
-      }
-      break;
-    }
-    case "query": {
-      // Search structured libraries — parallel Redis reads, inject as context + cards if matches found
-      const [allBooks, allMovies] = await Promise.all([getBooks(userId), getMovies()]);
-      const q = message.toLowerCase();
+  // ── Parallel context load ─────────────────────────────────────────────────────
+  const [profile, recentTurns, broadContext, classification] = await Promise.all([
+    getProfile(userId),
+    getRecentTurns(userId),
+    loadBroadContext(userId, message),
+    classifyIntent(message),
+  ]);
+  const intent = classification.intent;
 
-      // Title/author/series keyword matching
-      const bookWordMatches = allBooks.filter((b) => {
-        const words = [
-          ...b.title.toLowerCase().split(/\W+/),
-          ...b.author.toLowerCase().split(/\W+/),
-          ...(b.series ?? "").toLowerCase().split(/\W+/),
-        ].filter((w) => w.length >= 4);
-        return words.length > 0 && words.some((w) => q.includes(w));
-      });
-      const movieWordMatches = allMovies.filter((m) => {
-        const words = [
-          ...m.title.toLowerCase().split(/\W+/),
-          ...(m.director ?? "").toLowerCase().split(/\W+/),
-          ...(m.tags ?? []).join(" ").toLowerCase().split(/\W+/),
-        ].filter((w) => w.length >= 4);
-        return words.length > 0 && words.some((w) => q.includes(w));
-      });
+  let reply: string | undefined;
+  let saved = false;
+  let cards: ChatCard[] | undefined;
+  let pendingAction: PendingAction | undefined;
 
-      // Status keyword matching — ensures "what do I want to read?" has actual data in context
-      const bookStatusFilters: Array<[RegExp, string]> = [
-        [/want\s+to\s+read|reading\s+list|to[\s-]read/, "want_to_read"],
-        [/currently\s+reading|am\s+reading|still\s+reading/, "reading"],
-        [/finished|have\s+i\s+read|books?\s+i.ve\s+read|already\s+read/, "finished"],
-        [/on\s+(my\s+)?shelf/, "shelf"],
-      ];
-      const movieStatusFilters: Array<[RegExp, string]> = [
-        [/watchlist|want\s+to\s+watch|to[\s-]watch/, "watchlist"],
-        [/currently\s+watching|am\s+watching|still\s+watching/, "watching"],
-        [/have\s+i\s+(seen|watched)|movies?\s+i.ve\s+(seen|watched)|already\s+(seen|watched)/, "seen"],
-      ];
-
-      const bookMatchIds = new Set(bookWordMatches.map((b) => b.id));
-      const bookMatches = [...bookWordMatches];
-      for (const [pattern, status] of bookStatusFilters) {
-        if (pattern.test(q)) {
-          for (const b of allBooks.filter((b) => b.status === status)) {
-            if (!bookMatchIds.has(b.id)) { bookMatches.push(b); bookMatchIds.add(b.id); }
-          }
-        }
-      }
-
-      const movieMatchIds = new Set(movieWordMatches.map((m) => m.id));
-      const movieMatches = [...movieWordMatches];
-      for (const [pattern, status] of movieStatusFilters) {
-        if (pattern.test(q)) {
-          for (const m of allMovies.filter((m) => m.status === status)) {
-            if (!movieMatchIds.has(m.id)) { movieMatches.push(m); movieMatchIds.add(m.id); }
-          }
-        }
-      }
-
-      const queryContext = contextNotes ? [...contextNotes] : [];
-      const queryCards: ChatCard[] = [];
-
-      if (bookMatches.length > 0) {
-        const shown = bookMatches.slice(0, 30);
-        const extra = bookMatches.length > 30 ? ` (${bookMatches.length - 30} more not shown)` : "";
-        queryContext.push(`Books from your library that may be relevant${extra}:\n${JSON.stringify(shown, null, 2)}`);
-        queryCards.push(...shown.slice(0, 3).map((b): ChatCard => ({
-          type: "book",
-          title: b.title,
-          subtitle: `by ${b.author}`,
-          coverUrl: b.coverUrl ?? (b.isbn ? `https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg` : undefined),
-          status: b.status,
-          inLibrary: true,
-          actions: [],
-        })));
-      }
-
-      if (movieMatches.length > 0) {
-        const shown = movieMatches.slice(0, 30);
-        const extra = movieMatches.length > 30 ? ` (${movieMatches.length - 30} more not shown)` : "";
-        queryContext.push(`Movies/TV from your library that may be relevant${extra}:\n${JSON.stringify(shown, null, 2)}`);
-        queryCards.push(...shown.slice(0, 3).map((m): ChatCard => ({
-          type: "movie",
-          title: m.title,
-          subtitle: [m.year ? String(m.year) : null, m.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
-          coverUrl: m.coverUrl,
-          status: m.status,
-          inLibrary: true,
-          actions: [],
-        })));
-      }
-
-      if (queryCards.length > 0) cards = queryCards;
-
-      reply = await generateResponse(message, profile, recentTurns, queryContext, listContext);
-      break;
-    }
+  // ── Structural fast-path: high-confidence commands bypass Claude reasoning ────
+  if (classification.confidence === "high" && STRUCTURAL_INTENTS.has(intent)) {
+    switch (intent) {
     case "calendar_read": {
       if (!isCalDAVConfigured()) {
         reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
@@ -303,53 +236,11 @@ export async function POST(req: NextRequest) {
       }
       break;
     }
-    case "calendar_write": {
-      if (!isCalDAVConfigured()) {
-        reply = "Calendar isn't connected yet — add CALDAV_USERNAME and CALDAV_PASSWORD to get started.";
-      } else {
-        try {
-          // Try to enrich with real game data if the message mentions a team
-          const sportsResult = await findNextGame(message);
-          const details = await extractEventDetails(message, sportsResult?.game);
-          if (!details) {
-            reply = "I wasn't sure what event to create — could you give me more details?";
-          } else {
-            await createEvent(details);
-            // Format the event time for the confirmation message
-            let timeLabel: string;
-            if (details.allDay) {
-              const d = details.startLocal.slice(0, 8);
-              timeLabel = new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`).toLocaleDateString("en-US", {
-                weekday: "short", month: "short", day: "numeric", timeZone: USER_TIMEZONE,
-              });
-            } else {
-              const s = details.startLocal; // "YYYYMMDDTHHMMSS"
-              const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}`;
-              timeLabel = new Date(iso).toLocaleString("en-US", {
-                weekday: "short", month: "short", day: "numeric",
-                hour: "numeric", minute: "2-digit", timeZone: USER_TIMEZONE,
-              });
-            }
-            const locationNote = details.location ? ` at ${details.location}` : "";
-            const espnNote = sportsResult?.game ? " (time from ESPN)" : "";
-            reply = `Done — "${details.title}" added for ${timeLabel}${locationNote}.${espnNote}`;
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("403")) {
-            reply = "I couldn't write to your calendar — check that CALDAV_PASSWORD is an app-specific password from appleid.apple.com.";
-          } else {
-            reply = `Calendar error: ${msg}`;
-          }
-        }
-      }
-      break;
-    }
     case "sports_query": {
       const sportsResult = await findNextGame(message);
       if (!sportsResult) {
         // No team detected or no game found — fall back to general response
-        reply = await generateResponse(message, profile, recentTurns, contextNotes);
+        reply = await generateResponse(message, profile, recentTurns, broadContext.notes.map((m) => m.text));
       } else {
         const { game, team } = sportsResult;
         const startLabel = new Date(game.startTimeUTC).toLocaleString("en-US", {
@@ -365,7 +256,7 @@ export async function POST(req: NextRequest) {
     case "sports_score": {
       const team = detectTeam(message);
       if (!team) {
-        reply = await generateResponse(message, profile, recentTurns, contextNotes);
+        reply = await generateResponse(message, profile, recentTurns, broadContext.notes.map((m) => m.text));
       } else {
         const score = await getScore(team, 3); // scan last 3 days
         if (!score) {
@@ -381,7 +272,7 @@ export async function POST(req: NextRequest) {
     case "sports_schedule": {
       const team = detectTeam(message);
       if (!team) {
-        reply = await generateResponse(message, profile, recentTurns, contextNotes);
+        reply = await generateResponse(message, profile, recentTurns, broadContext.notes.map((m) => m.text));
       } else {
         const numMatch = message.match(/(\d+)\s*games?/i);
         const numGames = numMatch ? Math.min(parseInt(numMatch[1], 10), 20) : 5;
@@ -401,7 +292,7 @@ export async function POST(req: NextRequest) {
       const divInfo = detectDivision(message);
       const sport = team?.sport ?? divInfo?.sport;
       if (!sport) {
-        reply = await generateResponse(message, profile, recentTurns, contextNotes);
+        reply = await generateResponse(message, profile, recentTurns, broadContext.notes.map((m) => m.text));
       } else {
         const standings = await getStandings(sport, divInfo?.division);
         if (standings.length === 0) {
@@ -773,217 +664,6 @@ export async function POST(req: NextRequest) {
       }
       break;
     }
-    case "book_add": {
-      try {
-        const titles = classification.bookTitles?.length ? classification.bookTitles : [message];
-        const recommender = extractRecommender(message);
-        const today = new Date().toISOString().slice(0, 10);
-
-        // Parallel searches — one per title
-        const searchResults = await Promise.all(titles.map((t) => searchBooks(t).catch(() => [])));
-
-        const addedBooks: Book[] = [];
-        const notFound: string[] = [];
-
-        for (let i = 0; i < titles.length; i++) {
-          const top = searchResults[i][0];
-          if (!top) { notFound.push(titles[i]); continue; }
-          const isbn = top.isbn;
-          const coverUrl = top.coverUrl ?? (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined);
-          const book: Book = {
-            id: makeBookId(),
-            title: top.title,
-            author: top.authors[0] ?? "Unknown",
-            isbn,
-            coverUrl,
-            status: "want_to_read",
-            source: "other",
-            recommendedBy: recommender ?? undefined,
-            dateAdded: today,
-          };
-          await addBook(userId, book);
-          addedBooks.push(book);
-        }
-
-        saved = addedBooks.length > 0;
-        const recPart = recommender ? ` (recommended by ${recommender})` : "";
-        const notFoundPart = notFound.length > 0 ? ` Couldn't find: ${notFound.join(", ")}.` : "";
-
-        if (addedBooks.length === 1) {
-          reply = `Added *${addedBooks[0].title}* by ${addedBooks[0].author} to your library${recPart}. View it at /books.${notFoundPart}`;
-        } else if (addedBooks.length > 1) {
-          const list = addedBooks.map((b) => `*${b.title}*`).join(", ");
-          reply = `Added ${addedBooks.length} books to your library${recPart}: ${list}. View them at /books.${notFoundPart}`;
-        } else {
-          reply = `Couldn't find any of those books. Try the full title or author name.`;
-        }
-
-        cards = addedBooks.map((b): ChatCard => ({
-          type: "book",
-          title: b.title,
-          subtitle: `by ${b.author}`,
-          coverUrl: b.coverUrl,
-          inLibrary: true,
-          actions: [],
-        }));
-      } catch (err) {
-        reply = `Couldn't add those books: ${err instanceof Error ? err.message : String(err)}`;
-      }
-      break;
-    }
-    case "book_update": {
-      try {
-        const extraction = await extractBookUpdate(message);
-        const library = await getBooks(userId);
-        const today = new Date().toISOString().slice(0, 10);
-
-        const updates: Partial<Book> = {};
-        if (extraction.status) updates.status = extraction.status;
-        if (extraction.rating != null) updates.rating = extraction.rating;
-        if (extraction.notes) updates.notes = extraction.notes;
-        if (extraction.setDateStarted) updates.dateStarted = today;
-        if (extraction.setDateFinished) updates.dateFinished = today;
-
-        const matched: Book[] = [];
-        const notFound: string[] = [];
-        for (const title of extraction.titles) {
-          const match = findBookByTitle(library, title);
-          if (!match) { notFound.push(title); continue; }
-          matched.push(match);
-        }
-
-        await Promise.all(matched.map((m) => updateBook(userId, m.id, updates)));
-
-        const statusMsg = extraction.status ? ` Status: ${extraction.status.replace(/_/g, " ")}.` : "";
-        const notFoundPart = notFound.length > 0 ? ` (Couldn't find: ${notFound.join(", ")})` : "";
-
-        if (matched.length === 1) {
-          reply = `Updated *${matched[0].title}*.${statusMsg}${notFoundPart}`;
-        } else if (matched.length > 1) {
-          reply = `Updated ${matched.length} books: ${matched.map((m) => `*${m.title}*`).join(", ")}.${statusMsg}${notFoundPart}`;
-        } else {
-          reply = `Couldn't find ${extraction.titles.length === 1 ? `*${extraction.titles[0]}*` : "any of those books"} in your library. Want me to add ${extraction.titles.length === 1 ? "it" : "them"} first?`;
-        }
-      } catch (err) {
-        reply = `Couldn't update those books: ${err instanceof Error ? err.message : String(err)}`;
-      }
-      break;
-    }
-    case "movie_add": {
-      try {
-        const titles = classification.movieTitles?.length ? classification.movieTitles : [message];
-        const recommender = extractRecommender(message);
-        const today = new Date().toISOString().slice(0, 10);
-
-        // Parallel TMDB searches
-        const searchResults = await Promise.all(
-          titles.map((t) => searchMoviesAndTV(t).catch(() => []))
-        );
-
-        // Parallel streaming provider fetches for found results
-        const tops = searchResults.map((r) => r[0] ?? null);
-        const streamingResults = await Promise.all(
-          tops.map((top) => (top?.id ? fetchStreamingProviders(top.id, top.type) : Promise.resolve([])))
-        );
-
-        const addedMovies: Movie[] = [];
-        const notFound: string[] = [];
-
-        for (let i = 0; i < titles.length; i++) {
-          const top = tops[i];
-          if (!top) { notFound.push(titles[i]); continue; }
-          const streaming = streamingResults[i];
-          const movie: Movie = {
-            id: makeMovieId(),
-            title: top.title,
-            type: top.type,
-            year: top.releaseDate ? new Date(top.releaseDate).getFullYear() : undefined,
-            seasons: top.seasons,
-            runtime: top.runtime ? `${Math.floor(top.runtime / 60)}h ${top.runtime % 60}m` : undefined,
-            coverUrl: top.posterUrl ?? undefined,
-            tmdbId: top.id,
-            status: "watchlist",
-            recommendedBy: recommender ?? undefined,
-            streamingOn: streaming.length > 0 ? streaming : undefined,
-            dateAdded: today,
-          };
-          await addMovie(movie);
-          addedMovies.push(movie);
-        }
-
-        saved = addedMovies.length > 0;
-        const recPart = recommender ? ` (recommended by ${recommender})` : "";
-        const notFoundPart = notFound.length > 0 ? ` Couldn't find: ${notFound.join(", ")}.` : "";
-
-        if (addedMovies.length === 1) {
-          const streaming = addedMovies[0].streamingOn;
-          const streamPart = streaming?.length ? ` Available on ${streaming.slice(0, 2).join(", ")}.` : "";
-          reply = `Added *${addedMovies[0].title}* to your watchlist${recPart}.${streamPart} View it at /movies.${notFoundPart}`;
-        } else if (addedMovies.length > 1) {
-          const list = addedMovies.map((m) => `*${m.title}*`).join(", ");
-          reply = `Added ${addedMovies.length} titles to your watchlist${recPart}: ${list}. View them at /movies.${notFoundPart}`;
-        } else {
-          reply = `Couldn't find any of those on TMDb. Try the full title.`;
-        }
-
-        cards = addedMovies.map((m): ChatCard => ({
-          type: "movie",
-          title: m.title,
-          subtitle: [m.year, m.type === "tv" ? "TV Series" : "Movie"].filter(Boolean).join(" · "),
-          coverUrl: m.coverUrl,
-          inLibrary: true,
-          actions: [],
-        }));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply = msg.includes("TMDB_API_KEY")
-          ? "Movie search isn't set up yet — add TMDB_API_KEY to your environment variables."
-          : `Couldn't add those movies: ${msg}`;
-      }
-      break;
-    }
-    case "movie_update": {
-      try {
-        const extraction = await extractMovieUpdate(message);
-        const library = await getMovies();
-        const today = new Date().toISOString().slice(0, 10);
-
-        const updates: Partial<Movie> = {};
-        if (extraction.status) updates.status = extraction.status;
-        if (extraction.rating != null) updates.rating = extraction.rating;
-        if (extraction.notes) updates.notes = extraction.notes;
-        if (extraction.currentSeason != null) updates.currentSeason = extraction.currentSeason;
-        if (extraction.currentEpisode != null) updates.currentEpisode = extraction.currentEpisode;
-        if (extraction.setDateWatched) updates.dateWatched = today;
-
-        const matched: Movie[] = [];
-        const notFound: string[] = [];
-        for (const title of extraction.titles) {
-          const match = findMovieByTitle(library, title);
-          if (!match) { notFound.push(title); continue; }
-          matched.push(match);
-        }
-
-        await Promise.all(matched.map((m) => updateMovie(m.id, updates)));
-
-        const statusMsg = extraction.status ? ` Status: ${extraction.status}.` : "";
-        const progressMsg = extraction.currentSeason != null
-          ? ` Progress: S${extraction.currentSeason}${extraction.currentEpisode != null ? `E${extraction.currentEpisode}` : ""}.`
-          : "";
-        const notFoundPart = notFound.length > 0 ? ` (Couldn't find: ${notFound.join(", ")})` : "";
-
-        if (matched.length === 1) {
-          reply = `Updated *${matched[0].title}*.${statusMsg}${progressMsg}${notFoundPart}`;
-        } else if (matched.length > 1) {
-          reply = `Updated ${matched.length} titles: ${matched.map((m) => `*${m.title}*`).join(", ")}.${statusMsg}${notFoundPart}`;
-        } else {
-          reply = `Couldn't find ${extraction.titles.length === 1 ? `*${extraction.titles[0]}*` : "any of those titles"} in the library. Want me to add ${extraction.titles.length === 1 ? "it" : "them"} first?`;
-        }
-      } catch (err) {
-        reply = `Couldn't update those titles: ${err instanceof Error ? err.message : String(err)}`;
-      }
-      break;
-    }
     case "library_stats": {
       const [bookLib, movieLib] = await Promise.all([getBooks(userId), getMovies()]);
       const bookCounts = { reading: 0, want_to_read: 0, finished: 0, shelf: 0 };
@@ -1023,30 +703,6 @@ export async function POST(req: NextRequest) {
       }
       break;
     }
-    case "list_write": {
-      const listName = classification.listName ?? "general";
-      const items = classification.items ?? [];
-      if (isGroceryList(listName)) {
-        // Grocery lists: keep the categorize-and-confirm flow
-        reply = await handleListWrite(userId, listName, items);
-        await addToListIndex(userId, listName);
-      } else if (items.length === 1) {
-        // Non-grocery, single item: try enrichment
-        const result = await addItemToList({
-          userId,
-          listName,
-          itemName: items[0],
-          itemType: enrichmentSourceForList(listName) === "tmdb" ? "show/movie" : "other",
-          enrichmentSource: enrichmentSourceForList(listName),
-        });
-        reply = result.reply;
-      } else {
-        // Non-grocery, multiple items: write all, skip per-item enrichment
-        reply = await handleListWrite(userId, listName, items);
-        await addToListIndex(userId, listName);
-      }
-      break;
-    }
     case "list_read": {
       reply = await handleListRead(userId, classification.listName);
       break;
@@ -1077,41 +733,51 @@ export async function POST(req: NextRequest) {
       reply = `Your pantry staples (${staples.length} items):\n${staples.join(", ")}`;
       break;
     }
-    default: {
-      reply = await generateResponse(message, profile, recentTurns, contextNotes);
-    }
+    } // end structural switch
+  } // end structural fast-path
+
+  // ── Conversational path: Claude reasons from broad context ────────────────────
+  if (reply === undefined) {
+    const result = await generateConversationalResponse({
+      userId,
+      message,
+      profile,
+      recentTurns,
+      broadContext,
+    });
+    reply = result.reply;
+    pendingAction = result.pendingAction ?? undefined;
   }
 
   // Persist turns sequentially to preserve order
   await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
   await appendTurn(userId, { role: "assistant", content: reply, timestamp: Date.now() });
 
-  // Fire-and-forget auto-save: persist notable exchanges to Pinecone with a date prefix.
-  // Skip intents that already write to a dedicated store (lists, calendar, web search, etc.)
+  // Fire-and-forget auto-save. Skip write intents (they save to dedicated stores)
+  // and skip when a pending action was returned (wait for confirmation first).
   const AUTO_SAVE_SKIP = new Set<string>([
-    "save_note",        // already saved explicitly
-    "list_write",       // saved to Redis lists
-    "calendar_write",   // saved to CalDAV
     "web_search",       // has its own decideSave flow
     "staples_update",   // saved to Redis pantry
     "recipe_add",       // saved to Redis recipes
-    "book_add",         // saved to Redis library
-    "book_update",      // saved to Redis library
-    "movie_add",        // saved to Redis library
-    "movie_update",     // saved to Redis library
-    "list_read", "staples_read", "calendar_read", "library_stats", // read-only
+    "list_read", "staples_read", "calendar_read", "library_stats",
     "meal_plan_clear",
   ]);
-  if (!AUTO_SAVE_SKIP.has(intent)) {
+  if (!AUTO_SAVE_SKIP.has(intent) && !pendingAction) {
     const dateLabel = new Date().toLocaleDateString("en-US", {
       year: "numeric", month: "long", day: "numeric", timeZone: USER_TIMEZONE,
     });
     void (async () => {
       try {
-        await autoSaveExchange(userId, message, reply, dateLabel);
+        await autoSaveExchange(userId, message, reply!, dateLabel);
       } catch { /* non-fatal */ }
     })();
   }
 
-  return NextResponse.json({ reply, intent, saved, ...(cards ? { cards } : {}) });
+  return NextResponse.json({
+    reply,
+    intent,
+    saved,
+    ...(cards ? { cards } : {}),
+    ...(pendingAction ? { pendingAction } : {}),
+  });
 }

@@ -15,6 +15,12 @@ interface Message {
   cards?: ChatCard[];
 }
 
+interface PendingAction {
+  type: string;
+  payload: Record<string, unknown>;
+  confirmationRequired: boolean;
+}
+
 const TOKEN_KEY = "sonny_token";
 const VISITED_KEY = "sonny_visited";
 const MESSAGES_KEY = "sonny_chat_messages";
@@ -41,6 +47,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -103,10 +110,47 @@ export default function ChatPage() {
     }
   }
 
+  const executeAction = useCallback(
+    async (action: PendingAction) => {
+      if (!token || loading) return;
+      setLoading(true);
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "confirmed", confirmAction: action }),
+        });
+        if (res.status === 401) {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(MESSAGES_KEY);
+          setToken(null);
+          setMessages([]);
+          return;
+        }
+        const data = await res.json();
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      } catch {
+        setMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong. Please try again." }]);
+      } finally {
+        setLoading(false);
+        inputRef.current?.focus();
+      }
+    },
+    [token, loading]
+  );
+
+  function handleConfirm() {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+    void executeAction(action);
+  }
+
   const send = useCallback(
     async (message: string) => {
       if (!token || !message.trim() || loading) return;
 
+      setPendingAction(null);
       setMessages((prev) => [...prev, { role: "user", content: message }]);
       setLoading(true);
 
@@ -129,24 +173,28 @@ export default function ChatPage() {
         }
 
         const data = await res.json();
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: data.reply, cards: data.cards },
-        ]);
+        // Strip any leftover <action> block from the displayed reply
+        const replyText = (data.reply as string).replace(/<action>[\s\S]*?<\/action>/, "").trim();
+        setMessages((prev) => [...prev, { role: "assistant", content: replyText, cards: data.cards }]);
+
+        if (data.pendingAction) {
+          if (data.pendingAction.confirmationRequired) {
+            setPendingAction(data.pendingAction);
+          } else {
+            void executeAction(data.pendingAction);
+          }
+        }
       } catch {
         setMessages((prev) => [
           ...prev,
-          {
-            role: "assistant",
-            content: "Something went wrong. Please try again.",
-          },
+          { role: "assistant", content: "Something went wrong. Please try again." },
         ]);
       } finally {
         setLoading(false);
         inputRef.current?.focus();
       }
     },
-    [token, loading]
+    [token, loading, executeAction]
   );
 
   function handleInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -253,6 +301,17 @@ export default function ChatPage() {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {pendingAction?.confirmationRequired && (
+        <div className={styles.confirmBar}>
+          <button onClick={handleConfirm} className={styles.confirmButton} disabled={loading}>
+            Confirm
+          </button>
+          <button onClick={() => setPendingAction(null)} className={styles.cancelButton} disabled={loading}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       <div className={styles.inputBar}>
         <textarea

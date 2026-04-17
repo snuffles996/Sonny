@@ -30,10 +30,12 @@ export type Intent =
   | "list_read"
   | "categorization_correction"
   | "staples_update"
-  | "staples_read";
+  | "staples_read"
+  | "conversational";
 
 export interface ClassificationResult {
   intent: Intent;
+  confidence: "high" | "low";
   listName?: string;
   items?: string[];
   bookTitles?: string[];
@@ -45,6 +47,7 @@ export interface ClassificationResult {
 }
 
 const INTENT_DESCRIPTIONS = [
+  "conversational: user is asking a question, making a comment, or expressing something ambiguous — anything involving fuzzy references to a title, 'what should I watch/read', describing a mood or genre preference, finishing/watching/reading something (may need to update library), or anything that requires reasoning from context. Use this when unsure.",
   "save_note: user wants to save, remember, or log something personal to their memory",
   "query: user is asking about something stored in their personal notes, memory, or lists — including semantic questions about list contents like 'was there a movie about X on my list', 'do I have any shows about Y', 'which of my saved items is about Z'.",
   "web_search: user is asking about something in the external world — current events, general knowledge, restaurants or places, health topics, product research, how-to questions, or anything not stored in personal notes",
@@ -83,7 +86,27 @@ export async function classifyIntent(message: string): Promise<ClassificationRes
   const response = await client.messages.create({
     model: FAST_MODEL,
     max_tokens: 256,
-    system: `Classify the user's message into exactly one intent.\n\nIntents:\n${INTENT_DESCRIPTIONS}`,
+    system: [
+      `Classify the user's message into exactly one intent and set confidence.`,
+      ``,
+      `Set confidence: "high" only for unambiguous structural commands:`,
+      `- Clear sports requests (score, schedule, standings, calendar bulk)`,
+      `- Clear meal plan commands (create, swap, grocery, clear)`,
+      `- Staples updates/reads, profile updates, calendar reads`,
+      `- Explicit list reads ("show me my X list"), categorization corrections`,
+      `- Web searches, recipe URL adds, Audible library lookups`,
+      `- Library stats requests`,
+      ``,
+      `Set confidence: "low" and intent: "conversational" for:`,
+      `- Any fuzzy reference to a movie/book/show title`,
+      `- "What should I watch/read", mood/genre preferences`,
+      `- Finishing, watching, or reading something (may need library update)`,
+      `- Questions or anything involving reasoning from context`,
+      `- Ambiguous requests or follow-up questions`,
+      `- General conversation, opinions, or anything unclear`,
+      ``,
+      `Intents:\n${INTENT_DESCRIPTIONS}`,
+    ].join("\n"),
     messages: [{ role: "user", content: message }],
     tools: [
       {
@@ -95,6 +118,7 @@ export async function classifyIntent(message: string): Promise<ClassificationRes
             intent: {
               type: "string",
               enum: [
+                "conversational",
                 "save_note",
                 "query",
                 "calendar_read",
@@ -126,6 +150,11 @@ export async function classifyIntent(message: string): Promise<ClassificationRes
                 "staples_update",
                 "staples_read",
               ],
+            },
+            confidence: {
+              type: "string",
+              enum: ["high", "low"],
+              description: "high = unambiguous structural command; low = conversational, fuzzy, or unclear",
             },
             listName: {
               type: "string",
@@ -165,7 +194,7 @@ export async function classifyIntent(message: string): Promise<ClassificationRes
               description: "The correct category for the item. Only for categorization_correction.",
             },
           },
-          required: ["intent"],
+          required: ["intent", "confidence"],
         },
       },
     ],
@@ -173,6 +202,6 @@ export async function classifyIntent(message: string): Promise<ClassificationRes
   });
 
   const toolUse = response.content.find((b) => b.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") return { intent: "query" };
+  if (!toolUse || toolUse.type !== "tool_use") return { intent: "conversational", confidence: "low" };
   return toolUse.input as ClassificationResult;
 }
