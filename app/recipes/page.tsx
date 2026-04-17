@@ -21,6 +21,7 @@ export default function RecipesPage() {
   const [cuisine, setCuisine] = useState(ALL);
   const [source, setSource] = useState(ALL);
   const [selected, setSelected] = useState<Recipe | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   // Auth check
   useEffect(() => {
@@ -81,6 +82,18 @@ export default function RecipesPage() {
       return matchesCuisine && matchesSource && matchesQuery(r, search);
     });
   }, [recipes, cuisine, source, search]);
+
+  async function handleRemoveRecipe(slug: string) {
+    if (!token || removing) return;
+    setRemoving(true);
+    await fetch(`/api/recipes?slug=${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setRecipes((prev) => prev.filter((r) => r.slug !== slug));
+    setSelected(null);
+    setRemoving(false);
+  }
 
   if (loading) {
     return (
@@ -148,9 +161,18 @@ export default function RecipesPage() {
           <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
             <div className={styles.sheetHeader}>
               <h2 className={styles.sheetTitle}>{selected.name}</h2>
-              <button className={styles.closeBtn} onClick={() => setSelected(null)}>
-                ✕
-              </button>
+              <div className={styles.sheetHeaderActions}>
+                <button
+                  className={styles.removeRecipeBtn}
+                  onClick={() => handleRemoveRecipe(selected.slug)}
+                  disabled={removing}
+                >
+                  {removing ? "…" : "Remove"}
+                </button>
+                <button className={styles.closeBtn} onClick={() => setSelected(null)}>
+                  ✕
+                </button>
+              </div>
             </div>
             <div className={styles.sheetMeta}>
               <span className={styles.badge}>{selected.cuisine}</span>

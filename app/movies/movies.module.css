@@ -418,6 +418,21 @@
   cursor: not-allowed;
 }
 
+.removeBtn {
+  background: none;
+  border: 1px solid #3a1a1a;
+  color: #f87171;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.removeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Edit form ──────────────────────────────────────── */
 
 .editForm {
@@ -663,6 +678,23 @@
 }
 
 .bulkApply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bulkRemove {
+  background: none;
+  border: 1px solid #3a1a1a;
+  color: #f87171;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: 6px;
+}
+
+.bulkRemove:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

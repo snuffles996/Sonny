@@ -10,6 +10,7 @@ import CheckOffModal from "@/components/CheckOffModal";
 import GroceryList from "@/components/GroceryList";
 import PlanMealsModal from "@/components/PlanMealsModal";
 import SwapMealModal from "@/components/SwapMealModal";
+import AddMealModal from "@/components/AddMealModal";
 import PantryExclusions from "@/components/PantryExclusions";
 import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
 import type { Recipe } from "@/lib/recipes/types";
@@ -43,6 +44,7 @@ export default function MealPlanPage() {
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [swapMeal, setSwapMeal] = useState<PlannedMeal | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showAddMealModal, setShowAddMealModal] = useState(false);
 
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_KEY);
@@ -111,6 +113,33 @@ export default function MealPlanPage() {
     if (data.plan) setPlan(data.plan);
     setSwapMeal(null);
     // Grocery list is stale after a swap — clear it so it rebuilds
+    setGroceryItems(null);
+    setCheckedItems([]);
+  }
+
+  async function handleRemoveMeal(slug: string) {
+    if (!token) return;
+    const res = await fetch("/api/mealplan", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ removeMealSlug: slug }),
+    });
+    const data = await res.json();
+    if (data.plan) setPlan(data.plan);
+    setGroceryItems(null);
+    setCheckedItems([]);
+  }
+
+  async function handleAddMeal(slug: string) {
+    if (!token) return;
+    const res = await fetch("/api/mealplan", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ addSlug: slug }),
+    });
+    const data = await res.json();
+    if (data.plan) setPlan(data.plan);
+    setShowAddMealModal(false);
     setGroceryItems(null);
     setCheckedItems([]);
   }
@@ -228,7 +257,8 @@ export default function MealPlanPage() {
                 </div>
               ) : (
                 <div className={styles.mealsHeader}>
-                  <button className={styles.addMoreBtn} onClick={() => setShowPlanModal(true)}>+ New plan</button>
+                  <button className={styles.addMoreBtn} onClick={() => setShowAddMealModal(true)}>+ Add meal</button>
+                  <button className={styles.addMoreBtn} onClick={() => setShowPlanModal(true)}>New plan</button>
                   <button className={styles.clearBtn} onClick={() => setConfirmClear(true)}>Clear</button>
                 </div>
               )}
@@ -243,6 +273,7 @@ export default function MealPlanPage() {
                     onTapRecipe={(slug) => setSelectedRecipe(recipeMap.get(slug) ?? null)}
                     onServingsChange={handleServingsChange}
                     onSwap={(slug) => setSwapMeal(plan.meals.find((m) => m.recipeSlug === slug) ?? null)}
+                    onRemove={handleRemoveMeal}
                   />
                 ))}
               </div>
@@ -302,6 +333,13 @@ export default function MealPlanPage() {
           availableRecipes={swappableRecipes}
           onSwap={handleSwap}
           onCancel={() => setSwapMeal(null)}
+        />
+      )}
+      {showAddMealModal && (
+        <AddMealModal
+          availableRecipes={swappableRecipes}
+          onAdd={handleAddMeal}
+          onCancel={() => setShowAddMealModal(false)}
         />
       )}
 

@@ -43,19 +43,48 @@ export async function PATCH(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
-  if (!body?.slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
+  if (!body) return NextResponse.json({ error: "body required" }, { status: 400 });
 
-  const { slug, made, notes, replacementSlug, servings } = body as {
-    slug: string;
+  const { slug, made, notes, replacementSlug, servings, removeMealSlug, addSlug } = body as {
+    slug?: string;
     made?: boolean;
     notes?: string;
     replacementSlug?: string;
     servings?: number;
+    removeMealSlug?: string;
+    addSlug?: string;
   };
 
   const plan = await getActivePlan();
   if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
 
+  // Remove a single meal from the plan
+  if (removeMealSlug) {
+    plan.meals = plan.meals.filter((m) => m.recipeSlug !== removeMealSlug);
+    plan.updatedAt = new Date().toISOString();
+    plan.updatedBy = userId;
+    await saveActivePlan(plan);
+    await clearGroceryList();
+    return NextResponse.json({ plan });
+  }
+
+  // Add a single meal to the plan
+  if (addSlug) {
+    const recipes = await getRecipes();
+    const recipe = recipes.find((r) => r.slug === addSlug);
+    if (!recipe) return NextResponse.json({ error: "Recipe not found" }, { status: 404 });
+    if (plan.meals.some((m) => m.recipeSlug === addSlug)) {
+      return NextResponse.json({ error: "Recipe already in plan" }, { status: 409 });
+    }
+    plan.meals.push({ recipeSlug: recipe.slug, recipeName: recipe.name, addedBy: userId, made: false });
+    plan.updatedAt = new Date().toISOString();
+    plan.updatedBy = userId;
+    await saveActivePlan(plan);
+    await clearGroceryList();
+    return NextResponse.json({ plan });
+  }
+
+  if (!slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
   const idx = plan.meals.findIndex((m) => m.recipeSlug === slug);
   if (idx < 0) return NextResponse.json({ error: "Meal not found" }, { status: 404 });
 

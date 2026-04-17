@@ -152,6 +152,34 @@ export default function BooksPage() {
     });
   }
 
+  async function removeBook(id: string) {
+    if (!token) return;
+    await fetch(`/api/library/books?id=${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setBooks((prev) => prev.filter((b) => b.id !== id));
+    setSelected(null);
+    setEditing(false);
+  }
+
+  async function removeBulkBooks() {
+    if (!selectedIds.size || !token) return;
+    setBulkSaving(true);
+    await Promise.all(
+      Array.from(selectedIds).map((id) =>
+        fetch(`/api/library/books?id=${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      )
+    );
+    setBooks((prev) => prev.filter((b) => !selectedIds.has(b.id)));
+    setBulkSaving(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+  }
+
   async function applyBulk() {
     if (!selectedIds.size || !token) return;
     const updates: Partial<Book> = {};
@@ -222,6 +250,7 @@ export default function BooksPage() {
             </button>
             {editing ? (
               <div className={styles.editActions}>
+                <button className={styles.removeBtn} onClick={() => removeBook(selected.id)} disabled={saving}>Remove</button>
                 <button className={styles.cancelBtn} onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
                 <button className={styles.saveBtn} onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
               </div>
@@ -455,6 +484,13 @@ export default function BooksPage() {
         <div className={styles.bulkBar}>
           <div className={styles.bulkRow}>
             <span className={styles.bulkCount}>{selectedIds.size} selected</span>
+            <button
+              className={styles.bulkRemove}
+              onClick={removeBulkBooks}
+              disabled={!selectedIds.size || bulkSaving}
+            >
+              Remove
+            </button>
             <button
               className={styles.bulkApply}
               onClick={applyBulk}

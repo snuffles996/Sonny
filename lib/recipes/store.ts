@@ -14,6 +14,11 @@ export async function setRecipes(recipes: Recipe[]): Promise<void> {
   await redis.set(KEY, recipes);
 }
 
+export async function removeRecipe(slug: string): Promise<void> {
+  const recipes = await getRecipes();
+  await setRecipes(recipes.filter((r) => r.slug !== slug));
+}
+
 export async function addRecipe(recipe: Recipe): Promise<void> {
   const recipes = await getRecipes();
   // Replace if same slug already exists, otherwise append

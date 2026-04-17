@@ -140,3 +140,23 @@
   color: #888;
   border-color: #444;
 }
+
+.removeBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #555;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.removeBtn:hover {
+  color: #f87171;
+  border-color: #f87171;
+}

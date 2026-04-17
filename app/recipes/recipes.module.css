@@ -173,6 +173,28 @@
   border-bottom: 1px solid #1e1e1e;
 }
 
+.sheetHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.removeRecipeBtn {
+  background: none;
+  border: 1px solid #3a1a1a;
+  color: #f87171;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.removeRecipeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .closeBtn {
   background: #2a2a2a;
   border: none;
