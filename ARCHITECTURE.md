@@ -22,35 +22,47 @@
 
 ## Request Flow
 
-Every user interaction enters through `POST /api/chat`:
+Every user interaction enters through `POST /api/chat`. The handler supports two paths:
 
 ```
 Client (Bearer token)
   → authenticateUser() → "kevin" | "kylie" | 401
 
+  → body: { message, confirmAction? }
+
+  ── Confirm path (early return) ────────────────────────────────────────────
+  → if confirmAction present → executeConfirmedAction(action, userId)
+      (no session persist — confirmed turns don't consume the 10-turn window)
+  → return { reply }
+
+  ── Normal path ────────────────────────────────────────────────────────────
   → Promise.all([
       getProfile(userId),           // Redis: profile:{userId}
       getRecentTurns(userId),       // Redis: session:{userId} — last 10 turns, 4h TTL
-      classifyIntent(message),      // Haiku forced tool_use → ClassificationResult
-      searchNotes(userId, msg),     // Pinecone speculative search → contextNotes
-      searchUserLists(userId, msg), // Haiku picks relevant Redis lists → listContext
+      classifyIntent(message),      // Haiku forced tool_use → ClassificationResult (+ confidence)
+      loadBroadContext(userId, msg),// Pinecone embed + parallel namespace queries + Redis libraries
     ])
 
-  → Pending recommender intercept (if active, short-circuits to note save)
+  → STRUCTURAL_INTENTS fast path (high-confidence only):
+      if intent is structural (calendar, sports, recipe_add, meal_plan_*, etc.)
+      AND confidence is "high" → existing switch(intent) → handler → reply
 
-  → switch(intent) → handler
-        ↓
-    reply: string
+  → CONVERSATIONAL fallback (everything else):
+      generateConversationalResponse({ userId, message, profile, recentTurns, broadContext })
+        → Anthropic tool_use: model responds + optionally calls propose_action tool
+        → returns { reply, pendingAction? }
 
-  → appendTurn × 2 (user + assistant, sequential to preserve order)
+  → appendTurn × 2 (user + assistant, sequential)
 
-  → fire-and-forget: autoSaveExchange() — Haiku decides if exchange worth saving to Pinecone
-    (skipped for intents with dedicated write paths: save_note, list_write, calendar_write,
-     web_search, staples_update, recipe_add, and all read-only intents)
+  → fire-and-forget: autoSaveExchange()
+    (skipped for structural writes and when pendingAction is non-library type)
 
-  → return { reply, intent, saved, cards? }
-  (cards is populated for book_search, book_add, movie_query, movie_add)
+  → return { reply, intent, pendingAction? }
 ```
+
+### Confirm flow
+
+When the user taps "Confirm" in the UI, the client POSTs `{ confirmAction: PendingAction }`. The route early-returns after `executeConfirmedAction()` without persisting turns to keep the session window clean. Auto-save still runs for library actions (movie_add, book_add, etc.) to capture user commentary.
 
 ---
 
@@ -76,16 +88,52 @@ All extraction/classification uses **Haiku with forced `tool_use`** — every Ha
 
 | Model | Constant | Used for |
 |---|---|---|
-| Sonnet 4.6 | `MODEL` | `generateResponse()`, `selectMeals()`, `runWebSearch()` |
+| Sonnet 4.6 | `MODEL` | `generateConversationalResponse()`, `selectMeals()`, `runWebSearch()` |
 | Haiku 4.5 | `FAST_MODEL` | `classifyIntent()`, `extractEventDetails()`, `extractProfileUpdate()`, `extractRecipeFromUrl()`, `extractSportsQuery()`, `identifySwapTarget()`, `categorizeItems()`, `searchUserLists()`, `autoSaveExchange()`, `extractBookUpdate()`, `extractMovieUpdate()` |
 
 ---
+
+## Conversational System
+
+### New files
+
+| File | Purpose |
+|---|---|
+| `lib/anthropic/actions.ts` | `ActionType` union, `PendingAction` interface, `parsePendingAction()`, `stripActionBlock()` |
+| `lib/anthropic/context.ts` | `BroadContext` interface + `loadBroadContext()` — single embed, parallel Pinecone queries + full Redis movie/book libraries |
+| `lib/anthropic/execute.ts` | `executeConfirmedAction(action, userId)` — maps `ActionType` to store operations. Includes `titlesRoughlyMatch()` (50% word overlap guard before TMDb add). |
+
+### `BroadContext`
+
+`loadBroadContext(userId, message)` embeds the message once, then runs in parallel:
+- Pinecone: notes, restaurants, recipes (per-user + shared namespaces)
+- Redis: `getMovies()` (full library), `getBooks(userId)` (full library), `getActivePlan()`
+
+The full movie and book libraries are injected into the conversational system prompt so Sonny can answer "have I seen X" / "am I reading X" without a separate lookup.
+
+### `propose_action` tool
+
+`generateConversationalResponse()` uses Anthropic tool_use (`tool_choice: "auto"`) with a single `propose_action` tool. Claude can emit a text reply AND call the tool in the same turn. The tool call is structurally enforced — more reliable than parsing `<action>` JSON blocks from free text.
+
+```ts
+ActionType = "save_note" | "list_write" | "list_add_item" | "calendar_write"
+           | "movie_update" | "movie_add" | "movie_remove"
+           | "book_update"  | "book_add"  | "book_remove"
+           | "recipe_add"
+```
+
+`confirmationRequired: false` — for explicit statements ("I finished X", "I'm watching X"): auto-execute immediately.
+`confirmationRequired: true` — for ambiguous/query messages: show Confirm button to user.
+
+### Classifier changes
+
+`classifyIntent()` now also returns `confidence: "high" | "low"`. Structural intents only take the fast path when confidence is high. Low-confidence or `conversational` intent always falls through to `generateConversationalResponse()`.
 
 ## Intent System
 
 Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, returns `ClassificationResult`.
 
-`ClassificationResult` carries `intent` + optional fields: `listName`, `items`, `bookTitles`, `movieTitles`, `staplesAction`, `staplesItems`, `correctionItem`, `correctionCategory`.
+`ClassificationResult` carries `intent` + `confidence` + optional fields: `listName`, `items`, `bookTitles`, `movieTitles`, `staplesAction`, `staplesItems`, `correctionItem`, `correctionCategory`.
 
 ### Key classifier distinctions
 
@@ -99,6 +147,7 @@ Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, return
 
 | Intent | Handler | What it does |
 |---|---|---|
+| `conversational` | `lib/anthropic/respond.ts` | **Default path** — `generateConversationalResponse()` with full BroadContext + propose_action tool |
 | `save_note` | route.ts inline | Pinecone upsert; checks for pending recommender follow-up |
 | `query` | `lib/anthropic/respond.ts` | RAG: Pinecone + Redis list context → Sonnet response |
 | `web_search` | `lib/search/webSearch.ts` | Anthropic server-side `web_search_20260209` tool |
@@ -202,6 +251,13 @@ General-purpose named lists per user. Key: `list:{userId}:{listName}`.
 3. **`pantry.ts`** — `getCombinedExclusions()` merges both pantry sources for grocery list generation
 4. **`store.ts`** — active plan, history, grocery list CRUD. Grocery list auto-clears on plan clear or new plan
 
+**Meal plan API:** `GET /api/mealplan` (active plan), `POST` (create/replace), `DELETE` (clear + archive). `PATCH` handles four operations keyed by body fields:
+- `{ slug, made, notes? }` — check off a meal
+- `{ slug, servings }` — adjust per-meal serving count
+- `{ slug, replacementSlug }` — swap a meal
+- `{ removeMealSlug }` — remove one meal from plan (no `slug` required)
+- `{ addSlug }` — append a recipe to the existing plan (no `slug` required)
+
 **Grocery list API:** `GET /api/mealplan/grocery` (build + cache), `PATCH` (toggle checked item), `DELETE` (force rebuild)
 
 ### Auto-Save — `lib/notes/autoSave.ts`
@@ -228,6 +284,8 @@ General-purpose named lists per user. Key: `list:{userId}:{listName}`.
 
 Stored as `Recipe[]` in Redis (`data:recipes`) — full array, full-replace. `extract.ts` — Haiku extracts structured recipe from URL: title, `## Ingredients` + `## Instructions` markdown, totalTime, servings, cuisine, tags.
 
+API: `GET /api/recipes` (list all), `DELETE /api/recipes?slug=` (remove one). `store.ts` exports `removeRecipe(slug)`.
+
 ### Profile — `lib/profile/`
 
 `UserProfile` fields: `userId`, `homeLocation`, `workLocation`, `commuteCorridor`, `hobbiesAndInterests[]`, `dietaryPreferences[]`, `standingContext`, `updatedAt`. Loaded on every request, injected into all system prompts.
@@ -251,11 +309,14 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 - Menu overlay: `components/MenuOverlay.tsx` — slide-up sheet with Settings row + Library section (Books, Movies & TV, Recipes)
 - Library pages: `/books` (`app/books/`), `/movies` (`app/movies/`) — list + detail views with inline editing and bulk select
   - **Edit mode (both):** tap any item → "Edit" button in detail header → editable form → saves via `PATCH /api/library/books` or `PATCH /api/library/movies`
-    - Books: status, rating, notes, dateStarted, dateFinished
-    - Movies: status, rating, notes, dateWatched
-  - **Bulk select (both):** "Select" button in list header → check multiple items → opt-in field chips (Status, Rating, Date) → "Apply" → single atomic write via `PATCH /api/library/books/bulk` or `PATCH /api/library/movies/bulk`
+    - Books: status, rating, notes, dateStarted, dateFinished + **Remove** button → `DELETE /api/library/books?id=`
+    - Movies: status, rating, notes, dateWatched + **Remove** button → `DELETE /api/library/movies?id=`
+  - **Bulk select (both):** "Select" button in list header → check multiple items → opt-in field chips (Status, Rating, Date) → "Apply" → single atomic write via bulk endpoint. Also **Remove** button → parallel individual DELETEs.
 - Settings page: `/settings` (`app/settings/`) — profile editor backed by `GET/PATCH /api/profile`
 - Chat cards: `components/BookCard.tsx`, `components/MovieCard.tsx` — rendered in chat when API returns `cards[]`
+- **Recipes page** (`/recipes`): recipe detail sheet has a **Remove** button → `DELETE /api/recipes?slug=`
+- **Meal plan page** (`/mealplan`): each `MealPlanCard` has a × remove button → `PATCH /api/mealplan { removeMealSlug }`. Header has **+ Add meal** → `AddMealModal` (searchable recipe picker, lists non-planned recipes) → `PATCH /api/mealplan { addSlug }`. `PlanMealsModal` renamed to "New plan" to distinguish from add-single-meal flow.
+- **`components/AddMealModal.tsx`** — reuses SwapMealModal styles; picks a single recipe to append to the current plan
 - Skin Log page (`/skinlog`) remains functional but is no longer in bottom nav
 
 ---
