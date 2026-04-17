@@ -170,36 +170,38 @@ ${formatContextMatches(ctx.recipes)}
 ${formatActiveMealPlan(ctx.activeMealPlan)}
 
 ## How to handle actions
-Actions are executed by the system after the user confirms. You propose, the user confirms via a button, the system executes.
-
-When ready to propose an action, include this JSON block at the very end of your response — after your natural reply:
-
-<action>
-{
-  "type": "save_note" | "list_write" | "list_add_item" | "calendar_write" | "movie_update" | "movie_add" | "book_update" | "book_add" | "recipe_add",
-  "payload": { ...relevant fields... },
-  "confirmationRequired": true | false
-}
-</action>
-
-Action payload shapes:
-- save_note: { "text": "full note text to save" }
-- list_write: { "listName": "grocery", "items": ["item1", "item2"] }
-- list_add_item: { "listName": "watchlist", "item": "item name" }
-- movie_update: { "title": "exact title", "status": "seen" | "watching" | "watchlist" | "maybe", "rating": 1-5 (optional), "currentSeason": N (optional), "currentEpisode": N (optional) }
-- movie_add: { "title": "exact title", "status": "watching" | "watchlist" | "seen" | "maybe" (default: watchlist), "currentSeason": N (optional), "currentEpisode": N (optional) }
-- book_update: { "title": "exact title", "status": "finished" | "reading" | "want_to_read" | "shelf", "rating": 1-5 (optional) }
-- book_add: { "title": "exact title", "author": "author name if known", "status": "reading" | "want_to_read" (default: want_to_read) }
-- calendar_write: { "title": "event title", "dateISO": "YYYY-MM-DD", "timeLocal": "HH:MM" (omit if all-day), "durationMinutes": N (omit if all-day), "allDay": true | false, "location": "optional" }
-- recipe_add: { "url": "recipe URL" }
+When you want to take an action (add/update a movie or book, save a note, add to a list, create a calendar event), call the propose_action tool. You can respond conversationally AND call the tool in the same turn. The system will show the user a Confirm button — that button is their "yes". Do not ask them to say yes in text AND show a button.
 
 Key rules:
-- If the user mentions watching/reading something → check the full library lists above first (definitive). If it's already there, use movie_update/book_update. If not, use movie_add/book_add with the correct status and any season/episode info.
-- Set confirmationRequired: true when adding/modifying library entries, calendar events, or lists. The Confirm button = the user's yes.
-- Set confirmationRequired: false only when the intent is completely unambiguous (e.g., "save this note: ...").
-- Only one <action> block per response.
-- If you have enough info to propose the action, propose it — don't ask the user to confirm in text AND show a button. Pick one. The button is always better.`.trim();
+- If the user mentions watching/reading something → check the library lists above first. If it's already there, call propose_action with movie_update/book_update. If not, call propose_action with movie_add/book_add including status and any episode/season info.
+- Always call propose_action rather than narrating what you're going to do. "I'll add it" with no tool call = nothing happens.
+- Use confirmationRequired: true for library changes, calendar events, list writes. Use false only for unambiguous explicit saves ("remember that...").
+- If you genuinely need one clarifying detail, ask — but if you have enough info, just call the tool.`.trim();
 }
+
+const PROPOSE_ACTION_TOOL = {
+  name: "propose_action",
+  description: "Propose an action to take on the user's behalf. The system will show a Confirm button — use this instead of narrating what you're about to do.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      type: {
+        type: "string",
+        enum: ["save_note", "list_write", "list_add_item", "calendar_write", "movie_update", "movie_add", "book_update", "book_add", "recipe_add"],
+      },
+      payload: {
+        type: "object",
+        description: "Action-specific fields. movie_add: {title, status?, currentSeason?, currentEpisode?}. movie_update: {title, status?, rating?, currentSeason?, currentEpisode?}. book_add: {title, author?, status?}. book_update: {title, status?, rating?}. save_note: {text}. list_write: {listName, items[]}. list_add_item: {listName, item}. calendar_write: {title, dateISO, timeLocal?, durationMinutes?, allDay, location?}. recipe_add: {url}.",
+        additionalProperties: true,
+      },
+      confirmationRequired: {
+        type: "boolean",
+        description: "true for library changes, calendar events, list writes. false only for unambiguous explicit saves.",
+      },
+    },
+    required: ["type", "payload", "confirmationRequired"] as string[],
+  },
+} as const;
 
 export async function generateConversationalResponse({
   userId,
@@ -226,13 +228,17 @@ export async function generateConversationalResponse({
     max_tokens: 1024,
     system: buildConversationalSystemPrompt(userId, profile, broadContext),
     messages,
+    tools: [PROPOSE_ACTION_TOOL],
+    tool_choice: { type: "auto" },
   });
 
-  const text = response.content.find((b) => b.type === "text");
-  const rawReply = text?.type === "text" ? text.text : "Sorry, I couldn't generate a response.";
+  const textBlock = response.content.find((b) => b.type === "text");
+  const toolBlock = response.content.find((b) => b.type === "tool_use" && b.name === "propose_action");
 
-  const pendingAction = parsePendingAction(rawReply);
-  const reply = stripActionBlock(rawReply);
+  const reply = textBlock?.type === "text" ? stripActionBlock(textBlock.text) : "Got it.";
+  const pendingAction = toolBlock?.type === "tool_use"
+    ? (toolBlock.input as PendingAction)
+    : parsePendingAction(reply); // fallback: still parse <action> blocks if Claude used old format
 
   return { reply, pendingAction };
 }
