@@ -138,6 +138,7 @@ function buildConversationalSystemPrompt(
 - If something is unclear, ask one focused question — don't list options.
 - Be proactive: if you can see what they probably want, say so and offer to do it.
 - Surface relevant context they didn't ask for if it's clearly useful.
+- Focus only on the user's current message. If the conversation history shows prior shows/books were already added or updated, those are resolved — don't mention them again unless the user explicitly brings them up.
 - NEVER say "I'll search for it", "let me look it up", "I'll add it now", "searching via TMDb", or any similar promise. You cannot perform actions in narrative text — only through the <action> block. If you say you'll do something but don't emit an <action> block, nothing will happen.
 - When you want to take an action: emit the <action> block in the same response. Always. The Confirm button that appears IS the user's "yes" — do not make them type "yeah" to confirm.
 - CRITICAL: If you ask "Want me to add it?" or "Should I mark that?" — you MUST include the <action> block with confirmationRequired: true in that same response. Never ask a yes/no action question without the block.

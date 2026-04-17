@@ -753,8 +753,9 @@ export async function POST(req: NextRequest) {
   await appendTurn(userId, { role: "user", content: message, timestamp: Date.now() });
   await appendTurn(userId, { role: "assistant", content: reply, timestamp: Date.now() });
 
-  // Fire-and-forget auto-save. Skip write intents (they save to dedicated stores)
-  // and skip when a pending action was returned (wait for confirmation first).
+  // Fire-and-forget auto-save. Skip write intents (they save to dedicated stores).
+  // Allow auto-save even when a library pendingAction was proposed — the user's commentary
+  // (e.g. "I love the gross medical stuff...") is worth saving regardless of the action.
   const AUTO_SAVE_SKIP = new Set<string>([
     "web_search",       // has its own decideSave flow
     "staples_update",   // saved to Redis pantry
@@ -762,7 +763,8 @@ export async function POST(req: NextRequest) {
     "list_read", "staples_read", "calendar_read", "library_stats",
     "meal_plan_clear",
   ]);
-  if (!AUTO_SAVE_SKIP.has(intent) && !pendingAction) {
+  const isLibraryAction = pendingAction && ["movie_add", "movie_update", "book_add", "book_update"].includes(pendingAction.type);
+  if (!AUTO_SAVE_SKIP.has(intent) && (!pendingAction || isLibraryAction)) {
     const dateLabel = new Date().toLocaleDateString("en-US", {
       year: "numeric", month: "long", day: "numeric", timeZone: USER_TIMEZONE,
     });
