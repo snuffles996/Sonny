@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@pinecone-database/pinecone": "^7.1.0",
     "@upstash/redis": "^1.34.0",
     "lucide-react": "^1.8.0",
@@ -22,7 +23,6 @@
     "yaml": "^2.8.3"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
