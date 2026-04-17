@@ -1,0 +1,203 @@
+{
+  "schema_version": "1.0",
+  "name": "sonny",
+  "description": "Personal AI backend for Kevin & Kylie — meal planning, notes, recipes, calendar, and pantry.",
+  "auth": {
+    "type": "bearer",
+    "description": "Pass Authorization: Bearer <token> on every request. Token is KEVIN_SECRET or KYLIE_SECRET from environment."
+  },
+  "tools": [
+    {
+      "name": "get_meal_plan",
+      "description": "Return the current active meal plan from Redis, including all planned meals and serving count.",
+      "method": "GET",
+      "path": "/api/meals/plan",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "swap_meal",
+      "description": "Swap one meal in the active plan for a different recipe. Provide targetSlug (the recipeSlug to replace) or a natural-language message like 'swap the pasta'. Clears the grocery cache.",
+      "method": "POST",
+      "path": "/api/meals/swap",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "targetSlug": {
+            "type": "string",
+            "description": "The recipeSlug of the meal to replace. Skip Haiku identification when known."
+          },
+          "message": {
+            "type": "string",
+            "description": "Natural-language swap request (e.g. 'swap the chicken dish'). Used when targetSlug is not provided."
+          },
+          "preferences": {
+            "type": "string",
+            "description": "Optional flavour hint for the replacement (e.g. 'something quick', 'vegetarian')."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_grocery_list",
+      "description": "Return the grocery list for the active meal plan. Builds and caches automatically if not already cached. Returns items grouped by category and a checkedItems list.",
+      "method": "GET",
+      "path": "/api/meals/grocery",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "search_notes",
+      "description": "Semantic search over the authenticated user's Pinecone notes namespace (kevin-notes or kylie-notes), plus shared namespaces.",
+      "method": "POST",
+      "path": "/api/notes/search",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query (embedded and compared against stored notes)."
+          },
+          "topK": {
+            "type": "number",
+            "description": "Max results to return. Defaults to 5."
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "save_note",
+      "description": "Save a note to the authenticated user's Pinecone namespace. Prefix with a date for temporal recall (e.g. 'April 17, 2026: ...').",
+      "method": "POST",
+      "path": "/api/notes/save",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The note text to embed and store."
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "add_recipe",
+      "description": "Fetch a recipe page by URL, extract structured recipe data via Haiku, and save it to Redis.",
+      "method": "POST",
+      "path": "/api/recipes/add",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full URL of the recipe page (e.g. https://www.bonappetit.com/recipe/...)."
+          }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "list_recipes",
+      "description": "Return all recipes stored in Redis as a JSON array.",
+      "method": "GET",
+      "path": "/api/recipes/list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_upcoming_events",
+      "description": "Return upcoming iCloud calendar events as formatted text. Requires CalDAV to be configured.",
+      "method": "GET",
+      "path": "/api/calendar/upcoming",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "number",
+            "description": "How many days ahead to fetch. Defaults to 7, max 30."
+          }
+        }
+      }
+    },
+    {
+      "name": "create_calendar_event",
+      "description": "Create an event in the configured iCloud write calendar. startLocal and endLocal use format YYYYMMDDTHHMMSS for timed events or YYYYMMDD for all-day.",
+      "method": "POST",
+      "path": "/api/calendar/create",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Event title."
+          },
+          "startLocal": {
+            "type": "string",
+            "description": "Start time in local time. Format: YYYYMMDDTHHMMSS (timed) or YYYYMMDD (all-day)."
+          },
+          "endLocal": {
+            "type": "string",
+            "description": "End time in local time. Same format as startLocal."
+          },
+          "allDay": {
+            "type": "boolean",
+            "description": "True for all-day events. Defaults to false."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone. Defaults to America/Los_Angeles."
+          },
+          "location": {
+            "type": "string",
+            "description": "Optional location string."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional event notes/description."
+          }
+        },
+        "required": ["title", "startLocal", "endLocal"]
+      }
+    },
+    {
+      "name": "get_pantry",
+      "description": "Return the current pantry staples list (shared between Kevin and Kylie). These items are excluded from grocery list generation.",
+      "method": "GET",
+      "path": "/api/pantry",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "update_pantry",
+      "description": "Add or remove items from the shared pantry staples list.",
+      "method": "POST",
+      "path": "/api/pantry",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["add", "remove"],
+            "description": "Whether to add or remove the items."
+          },
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of ingredient names to add or remove."
+          }
+        },
+        "required": ["action", "items"]
+      }
+    }
+  ]
+}
