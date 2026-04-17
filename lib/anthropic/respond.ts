@@ -175,7 +175,8 @@ When you want to take an action (add/update a movie or book, save a note, add to
 Key rules:
 - If the user mentions watching/reading something → check the library lists above first. If it's already there, call propose_action with movie_update/book_update. If not, call propose_action with movie_add/book_add including status and any episode/season info.
 - Always call propose_action rather than narrating what you're going to do. "I'll add it" with no tool call = nothing happens.
-- Use confirmationRequired: true for library changes, calendar events, list writes. Use false only for unambiguous explicit saves ("remember that...").
+- confirmationRequired: false when the user is explicitly stating a fact about themselves: "I've been watching X", "I finished X", "I'm reading X", "I just watched X", "I started X". They're telling you — just do it.
+- confirmationRequired: true when the user is asking about something or the title/intent is ambiguous: "what should I watch?", "is X good?", "tell me about X", "have I seen X?". They might just be curious, not requesting an update.
 - If you genuinely need one clarifying detail, ask — but if you have enough info, just call the tool.`.trim();
 }
 
