@@ -94,6 +94,8 @@ export default function MoviesPage() {
   const [bulkRating, setBulkRating] = useState<number | null>(null);
   const [bulkDateWatched, setBulkDateWatched] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
 
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_KEY);
@@ -141,6 +143,7 @@ export default function MoviesPage() {
     setBulkStatus(null);
     setBulkRating(null);
     setBulkDateWatched(null);
+    setConfirmBulkRemove(false);
   }
 
   function toggleSelect(id: string) {
@@ -160,6 +163,7 @@ export default function MoviesPage() {
     setMovies((prev) => prev.filter((m) => m.id !== id));
     setSelected(null);
     setEditing(false);
+    setConfirmRemove(false);
   }
 
   async function removeBulkMovies() {
@@ -177,6 +181,7 @@ export default function MoviesPage() {
     setBulkSaving(false);
     setSelectedIds(new Set());
     setSelectMode(false);
+    setConfirmBulkRemove(false);
   }
 
   async function applyBulk() {
@@ -243,14 +248,21 @@ export default function MoviesPage() {
       {selected && (
         <div className={styles.detail}>
           <div className={styles.detailHeader}>
-            <button className={styles.backBtn} onClick={() => { setSelected(null); setEditing(false); }}>
+            <button className={styles.backBtn} onClick={() => { setSelected(null); setEditing(false); setConfirmRemove(false); }}>
               <ArrowLeft size={18} />
               <span>Movies &amp; TV</span>
             </button>
             {editing ? (
               <div className={styles.editActions}>
-                <button className={styles.removeBtn} onClick={() => removeMovie(selected.id)} disabled={saving}>Remove</button>
-                <button className={styles.cancelBtn} onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+                {confirmRemove ? (
+                  <>
+                    <button className={styles.confirmRemoveBtn} onClick={() => removeMovie(selected.id)} disabled={saving}>Confirm</button>
+                    <button className={styles.cancelRemoveBtn} onClick={() => setConfirmRemove(false)}>Cancel</button>
+                  </>
+                ) : (
+                  <button className={styles.removeBtn} onClick={() => setConfirmRemove(true)} disabled={saving}>Remove</button>
+                )}
+                <button className={styles.cancelBtn} onClick={() => { setEditing(false); setConfirmRemove(false); }} disabled={saving}>Cancel</button>
                 <button className={styles.saveBtn} onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
               </div>
             ) : (
@@ -488,13 +500,28 @@ export default function MoviesPage() {
         <div className={styles.bulkBar}>
           <div className={styles.bulkRow}>
             <span className={styles.bulkCount}>{selectedIds.size} selected</span>
-            <button
-              className={styles.bulkRemove}
-              onClick={removeBulkMovies}
-              disabled={!selectedIds.size || bulkSaving}
-            >
-              Remove
-            </button>
+            {confirmBulkRemove ? (
+              <>
+                <button
+                  className={styles.bulkConfirmRemove}
+                  onClick={removeBulkMovies}
+                  disabled={bulkSaving}
+                >
+                  {bulkSaving ? "…" : "Confirm"}
+                </button>
+                <button className={styles.bulkCancelRemove} onClick={() => setConfirmBulkRemove(false)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                className={styles.bulkRemove}
+                onClick={() => setConfirmBulkRemove(true)}
+                disabled={!selectedIds.size || bulkSaving}
+              >
+                Remove
+              </button>
+            )}
             <button
               className={styles.bulkApply}
               onClick={applyBulk}

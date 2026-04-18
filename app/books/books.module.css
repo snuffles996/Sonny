@@ -424,6 +424,32 @@
   cursor: not-allowed;
 }
 
+.confirmRemoveBtn {
+  background: #f87171;
+  border: none;
+  color: #000;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.confirmRemoveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelRemoveBtn {
+  background: none;
+  border: 1px solid #444;
+  color: #888;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 /* ── Edit form ──────────────────────────────────────── */
 
 .editForm {
@@ -688,4 +714,33 @@
 .bulkRemove:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.bulkConfirmRemove {
+  background: #f87171;
+  border: none;
+  color: #000;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: 4px;
+}
+
+.bulkConfirmRemove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bulkCancelRemove {
+  background: none;
+  border: 1px solid #444;
+  color: #888;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-right: 6px;
 }

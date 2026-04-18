@@ -22,6 +22,7 @@ export default function RecipesPage() {
   const [source, setSource] = useState(ALL);
   const [selected, setSelected] = useState<Recipe | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   // Auth check
   useEffect(() => {
@@ -93,6 +94,7 @@ export default function RecipesPage() {
     setRecipes((prev) => prev.filter((r) => r.slug !== slug));
     setSelected(null);
     setRemoving(false);
+    setConfirmRemove(false);
   }
 
   if (loading) {
@@ -157,19 +159,33 @@ export default function RecipesPage() {
       <BottomNav />
 
       {selected && (
-        <div className={styles.overlay} onClick={() => setSelected(null)}>
+        <div className={styles.overlay} onClick={() => { setSelected(null); setConfirmRemove(false); }}>
           <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
             <div className={styles.sheetHeader}>
               <h2 className={styles.sheetTitle}>{selected.name}</h2>
               <div className={styles.sheetHeaderActions}>
-                <button
-                  className={styles.removeRecipeBtn}
-                  onClick={() => handleRemoveRecipe(selected.slug)}
-                  disabled={removing}
-                >
-                  {removing ? "…" : "Remove"}
-                </button>
-                <button className={styles.closeBtn} onClick={() => setSelected(null)}>
+                {confirmRemove ? (
+                  <>
+                    <button
+                      className={styles.confirmRemoveBtn}
+                      onClick={() => handleRemoveRecipe(selected.slug)}
+                      disabled={removing}
+                    >
+                      {removing ? "…" : "Confirm"}
+                    </button>
+                    <button className={styles.cancelRemoveBtn} onClick={() => setConfirmRemove(false)}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className={styles.removeRecipeBtn}
+                    onClick={() => setConfirmRemove(true)}
+                  >
+                    Remove
+                  </button>
+                )}
+                <button className={styles.closeBtn} onClick={() => { setSelected(null); setConfirmRemove(false); }}>
                   ✕
                 </button>
               </div>

@@ -195,6 +195,32 @@
   cursor: not-allowed;
 }
 
+.confirmRemoveBtn {
+  background: #f87171;
+  border: none;
+  color: #000;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.confirmRemoveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelRemoveBtn {
+  background: none;
+  border: 1px solid #444;
+  color: #888;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 .closeBtn {
   background: #2a2a2a;
   border: none;
