@@ -28,6 +28,8 @@ import { isCalDAVConfigured } from "@/lib/caldav/client";
 import { getPantryStaples, addStaples, removeStaples } from "@/lib/pantry/store";
 import { searchAudibleLibrary } from "@/lib/books/audible-library";
 import { runWebSearch } from "@/lib/search/webSearch";
+import { getBooks } from "@/lib/books/store";
+import { getMovies } from "@/lib/movies/store";
 import { getList, addItems } from "@/lib/lists/store";
 import { categorizeItems } from "@/lib/lists/categorize";
 import { addToListIndex, getUserListIndex } from "@/lib/lists/index";
@@ -61,6 +63,10 @@ const TOOLS: Tool[] = [
   // Pantry
   { name: "sonny_get_pantry", description: "Return the shared pantry staples list. These items are excluded from grocery lists.", inputSchema: { type: "object", properties: {} } },
   { name: "sonny_update_pantry", description: "Add or remove items from the shared pantry staples list.", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["add", "remove"] }, items: { type: "array", items: { type: "string" } } }, required: ["action", "items"] } },
+
+  // Libraries (structured Redis stores)
+  { name: "sonny_get_books", description: "Return the user's full book library from Redis. Each entry has title, author, status (shelf/want_to_read/reading/finished), and optional rating (1–5), notes, series, tags.", inputSchema: { type: "object", properties: { status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"], description: "Filter by status (omit for all)" } } } },
+  { name: "sonny_get_movies", description: "Return the shared movie/TV library from Redis. Each entry has title, type (movie/tv), status (maybe/watchlist/watching/seen), and optional rating (1–5), notes, streamingOn, seasons.", inputSchema: { type: "object", properties: { status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Filter by status (omit for all)" }, type: { type: "string", enum: ["movie", "tv"], description: "Filter by movie or tv (omit for all)" } } } },
 
   // Search
   { name: "sonny_search_books", description: "Semantic search over the shared-books Pinecone namespace.", inputSchema: { type: "object", properties: { query: { type: "string" }, topK: { type: "number" } }, required: ["query"] } },
@@ -218,6 +224,18 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
     }
 
     // ── Search ─────────────────────────────────────────────────────────────────
+    case "sonny_get_books": {
+      let books = await getBooks(userId);
+      if (args.status) books = books.filter((b) => b.status === args.status);
+      return { count: books.length, books };
+    }
+    case "sonny_get_movies": {
+      let movies = await getMovies();
+      if (args.status) movies = movies.filter((m) => m.status === args.status);
+      if (args.type) movies = movies.filter((m) => m.type === args.type);
+      return { count: movies.length, movies };
+    }
+
     case "sonny_search_books": {
       const vector = await embedQuery(args.query as string);
       const res = await getIndex().namespace("shared-books").query({ vector, topK: (args.topK as number) ?? 5, includeMetadata: true });
