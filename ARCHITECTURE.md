@@ -321,6 +321,71 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 
 ---
 
+## Remote MCP Server
+
+`app/api/mcp/route.ts` — Streamable HTTP MCP server compatible with claude.ai Settings → Connectors and Claude Desktop remote connector support.
+
+### Transport
+
+Uses `WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/sdk`. Stateless — a fresh `Server` + `Transport` pair is created per request (correct for Vercel serverless; no session persistence).
+
+### Auth
+
+Accepts auth from either:
+- `Authorization: Bearer <token>` header (Claude Desktop, API clients)
+- `?token=<token>` query parameter (claude.ai connector UI, which only supports OAuth2 or URL-embedded tokens)
+
+Both resolve via the same `KEVIN_SECRET` / `KYLIE_SECRET` env vars as the rest of the API. Auth is checked in all three handlers (POST, GET, DELETE).
+
+### Route handlers
+
+| Method | Purpose |
+|---|---|
+| `POST` | JSON-RPC: `initialize`, `tools/list`, `tools/call` |
+| `GET` | SSE stream for server-to-client push (stateless — SDK handles it) |
+| `DELETE` | Session termination (stateless — returns 204) |
+
+### Tools (25)
+
+| Tool | Backed by |
+|---|---|
+| `sonny_search_notes` | Pinecone `{userId}-notes` |
+| `sonny_save_note` | Pinecone `{userId}-notes` |
+| `sonny_get_meal_plan` | Redis `mealplan:shared:active` |
+| `sonny_create_meal_plan` | `selectMeals()` → Redis |
+| `sonny_swap_meal` | `identifySwapTarget()` + `selectMeals()` |
+| `sonny_get_grocery_list` | `buildGroceryList()` + Redis cache |
+| `sonny_add_recipe` | `extractRecipeFromUrl()` → Redis |
+| `sonny_list_recipes` | Redis `data:recipes` |
+| `sonny_get_calendar` | CalDAV `getUpcomingEvents()` |
+| `sonny_create_event` | CalDAV `createEvent()` |
+| `sonny_get_pantry` | Redis `pantry:shared` |
+| `sonny_update_pantry` | Redis `pantry:shared` |
+| `sonny_get_books` | Redis `library:{userId}:books` — supports optional `status` filter |
+| `sonny_get_movies` | Redis `library:shared:movies` — supports optional `status` + `type` filters |
+| `sonny_search_books` | Pinecone `shared-books` (legacy enrichment namespace) |
+| `sonny_search_movies` | Pinecone `shared-movies` (legacy enrichment namespace) |
+| `sonny_search_audible` | Pinecone `kevin-audible` |
+| `sonny_web_search` | Anthropic `web_search_20260209` |
+| `sonny_list_all_lists` | Redis `list-index:{userId}` — enumerate all list names before fetching |
+| `sonny_get_list` | Redis `list:{userId}:{listName}` |
+| `sonny_update_list` | Redis `list:{userId}:{listName}` + `list-index:{userId}` |
+| `sonny_get_profile` | Redis `profile:{userId}` |
+| `sonny_update_profile` | Haiku extraction → Redis `profile:{userId}` |
+| `sonny_sports_next` | ESPN next game |
+| `sonny_sports_score` | ESPN recent score |
+| `sonny_sports_standings` | ESPN standings |
+
+### Connector setup (claude.ai)
+
+Settings → Connectors → Add Custom Connector:
+- **URL:** `https://sonny-snuffles996s-projects.vercel.app/api/mcp?token=YOUR_SECRET`
+- No OAuth fields needed
+
+After changing the tool list, users must re-sync the connector in claude.ai to pick up new tools.
+
+---
+
 ## Cron
 
 `app/api/cron/route.ts` runs Monday 8am (`vercel.json` schedule: `0 8 * * 1`). Currently a stub — intended to send weekly meal plan + calendar briefing to Kevin and Kylie.
