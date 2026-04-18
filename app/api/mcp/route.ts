@@ -30,7 +30,7 @@ import { searchAudibleLibrary } from "@/lib/books/audible-library";
 import { runWebSearch } from "@/lib/search/webSearch";
 import { getList, addItems } from "@/lib/lists/store";
 import { categorizeItems } from "@/lib/lists/categorize";
-import { addToListIndex } from "@/lib/lists/index";
+import { addToListIndex, getUserListIndex } from "@/lib/lists/index";
 import { getProfile, saveProfile } from "@/lib/profile/store";
 import { extractProfileUpdate } from "@/lib/anthropic/profile";
 import { detectTeam, findGame, getScore, getStandings } from "@/lib/sports/lookup";
@@ -69,6 +69,7 @@ const TOOLS: Tool[] = [
   { name: "sonny_web_search", description: "Run a web search via Anthropic's web_search tool and return a synthesized answer with source URLs.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
 
   // Lists
+  { name: "sonny_list_all_lists", description: "Return all list names the user has created (e.g. 'watchlist', 'books', 'wishlist'). Use this before sonny_get_list when you don't know the list name.", inputSchema: { type: "object", properties: {} } },
   { name: "sonny_get_list", description: "Return a named list (e.g. 'watchlist', 'wishlist') grouped by category.", inputSchema: { type: "object", properties: { listName: { type: "string", description: "e.g. 'watchlist'" } }, required: ["listName"] } },
   { name: "sonny_update_list", description: "Add items to a named list. Items are auto-categorized via Haiku.", inputSchema: { type: "object", properties: { listName: { type: "string" }, items: { type: "array", items: { type: "string" } } }, required: ["listName", "items"] } },
 
@@ -236,6 +237,8 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
     }
 
     // ── Lists ──────────────────────────────────────────────────────────────────
+    case "sonny_list_all_lists":
+      return { lists: await getUserListIndex(userId) };
     case "sonny_get_list":
       return { listName: args.listName, items: await getList(userId, args.listName as string) };
     case "sonny_update_list": {
