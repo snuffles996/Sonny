@@ -327,9 +327,19 @@ function unauthorized() {
   );
 }
 
+// Accept auth from Bearer header OR ?token= query param (for claude.ai connector URL)
+function authenticateMcp(req: NextRequest): import("@/lib/profile/types").UserId | null {
+  const fromHeader = authenticateUser(req);
+  if (fromHeader) return fromHeader;
+  const token = req.nextUrl.searchParams.get("token") ?? "";
+  if (token === process.env.KEVIN_SECRET) return "kevin";
+  if (token === process.env.KYLIE_SECRET) return "kylie";
+  return null;
+}
+
 // POST — handles initialize, tools/list, tools/call (and notification acks)
 export async function POST(req: NextRequest) {
-  const userId = authenticateUser(req);
+  const userId = authenticateMcp(req);
   if (!userId) return unauthorized();
 
   const { server, transport } = buildServer(userId);
@@ -339,7 +349,7 @@ export async function POST(req: NextRequest) {
 
 // GET — SSE stream for server-to-client push (stateless: nothing to push, handled by SDK)
 export async function GET(req: NextRequest) {
-  const userId = authenticateUser(req);
+  const userId = authenticateMcp(req);
   if (!userId) return unauthorized();
 
   const { server, transport } = buildServer(userId);
@@ -349,7 +359,7 @@ export async function GET(req: NextRequest) {
 
 // DELETE — session termination (stateless: nothing to clean up)
 export async function DELETE(req: NextRequest) {
-  const userId = authenticateUser(req);
+  const userId = authenticateMcp(req);
   if (!userId) return unauthorized();
   return new Response(null, { status: 204 });
 }
