@@ -219,9 +219,9 @@ All stores use a **full-replace pattern** — fetch current value, merge/update,
 | `kylie-notes` | Kylie's saved notes |
 | `{userId}-search` | Saved web search summaries |
 | `shared-restaurants` | Restaurant recommendations |
-| `shared-movies` | Movie/TV enriched saves |
-| `shared-books` | Book recommendations |
-| `kevin-audible` | Kevin's Audible library — legacy fallback only; primary store is now `library:kevin:books` in Redis |
+| `shared-recipes` | Recipe/food notes |
+| `shared-travel` | Travel notes |
+| `kevin-audible` | Kevin's Audible library |
 
 ---
 
@@ -362,9 +362,9 @@ Both resolve via the same `KEVIN_SECRET` / `KYLIE_SECRET` env vars as the rest o
 | `sonny_get_pantry` | Redis `pantry:shared` |
 | `sonny_update_pantry` | Redis `pantry:shared` |
 | `sonny_get_books` | Redis `library:{userId}:books` — supports optional `status` filter |
+| `sonny_add_book` | Google Books lookup → Redis `library:{userId}:books` |
 | `sonny_get_movies` | Redis `library:shared:movies` — supports optional `status` + `type` filters |
-| `sonny_search_books` | Pinecone `shared-books` (legacy enrichment namespace) |
-| `sonny_search_movies` | Pinecone `shared-movies` (legacy enrichment namespace) |
+| `sonny_add_movie` | TMDb lookup → Redis `library:shared:movies` |
 | `sonny_search_audible` | Pinecone `kevin-audible` |
 | `sonny_web_search` | Anthropic `web_search_20260209` |
 | `sonny_list_all_lists` | Redis `list-index:{userId}` — enumerate all list names before fetching |
@@ -432,7 +432,6 @@ After changing the tool list, users must re-sync the connector in claude.ai to p
 - **Weekly briefing cron** — stub at `app/api/cron/route.ts`; send meal plan + calendar summary Monday 8am to Kevin and Kylie.
 - **`PlannedMeal.mealType`** — extend to support breakfast/lunch/dinner type in meal planning.
 - **Kylie's Audible** — `audible_library` intent now searches `library:{userId}:books` automatically per-user. Kylie needs her own Audible export + sync run (`AUDIBLE_USER_ID=kylie node scripts/sync-audible.mjs kylie-library.json`).
-- **Migrate old Pinecone watchlist/book-list entries to Redis stores** — items saved before the structured library existed live in `sharedMovies` / `shared-books` Pinecone namespaces; a one-time migration would surface them in the `/books` and `/movies` pages.
 - **Book cover fallback quality** — Open Library coverage is incomplete. Consider adding a Google Books cover URL (available in the `searchBooks()` response via `info.imageLinks.thumbnail`) as a secondary source.
 
 ### Infrastructure

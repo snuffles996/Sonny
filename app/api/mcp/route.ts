@@ -11,8 +11,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { authenticateUser } from "@/lib/auth";
-import { searchNotes, saveNote, embedQuery } from "@/lib/pinecone/records";
-import { getIndex } from "@/lib/pinecone/client";
+import { searchNotes, saveNote } from "@/lib/pinecone/records";
 import {
   getActivePlan, saveActivePlan, clearGroceryList,
   getGroceryList, saveGroceryList,
@@ -28,8 +27,12 @@ import { isCalDAVConfigured } from "@/lib/caldav/client";
 import { getPantryStaples, addStaples, removeStaples } from "@/lib/pantry/store";
 import { searchAudibleLibrary } from "@/lib/books/audible-library";
 import { runWebSearch } from "@/lib/search/webSearch";
-import { getBooks } from "@/lib/books/store";
-import { getMovies } from "@/lib/movies/store";
+import { getBooks, addBook } from "@/lib/books/store";
+import { getMovies, addMovie } from "@/lib/movies/store";
+import { searchBooks } from "@/lib/books/search";
+import { searchMoviesAndTV } from "@/lib/movies/search";
+import type { Book } from "@/lib/books/types";
+import type { Movie } from "@/lib/movies/types";
 import { getList, addItems } from "@/lib/lists/store";
 import { categorizeItems } from "@/lib/lists/categorize";
 import { addToListIndex, getUserListIndex } from "@/lib/lists/index";
@@ -69,8 +72,8 @@ const TOOLS: Tool[] = [
   { name: "sonny_get_movies", description: "Return the shared movie/TV library from Redis. Each entry has title, type (movie/tv), status (maybe/watchlist/watching/seen), and optional rating (1–5), notes, streamingOn, seasons.", inputSchema: { type: "object", properties: { status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Filter by status (omit for all)" }, type: { type: "string", enum: ["movie", "tv"], description: "Filter by movie or tv (omit for all)" } } } },
 
   // Search
-  { name: "sonny_search_books", description: "Semantic search over the shared-books Pinecone namespace.", inputSchema: { type: "object", properties: { query: { type: "string" }, topK: { type: "number" } }, required: ["query"] } },
-  { name: "sonny_search_movies", description: "Semantic search over the shared-movies Pinecone namespace.", inputSchema: { type: "object", properties: { query: { type: "string" }, topK: { type: "number" } }, required: ["query"] } },
+  { name: "sonny_add_book", description: "Add a book to the user's library. Looks up metadata via Google Books and saves to Redis. Status defaults to 'want_to_read'.", inputSchema: { type: "object", properties: { title: { type: "string" }, author: { type: "string", description: "Optional — improves search accuracy" }, status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"], description: "Default: want_to_read" } }, required: ["title"] } },
+  { name: "sonny_add_movie", description: "Add a movie or TV show to the shared library. Looks up metadata via TMDb and saves to Redis. Status defaults to 'watchlist'.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Default: watchlist" }, currentSeason: { type: "number" }, currentEpisode: { type: "number" } }, required: ["title"] } },
   { name: "sonny_search_audible", description: "Semantic search over Kevin's Audible library (kevin-audible namespace).", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "sonny_web_search", description: "Run a web search via Anthropic's web_search tool and return a synthesized answer with source URLs.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
 
@@ -236,15 +239,53 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
       return { count: movies.length, movies };
     }
 
-    case "sonny_search_books": {
-      const vector = await embedQuery(args.query as string);
-      const res = await getIndex().namespace("shared-books").query({ vector, topK: (args.topK as number) ?? 5, includeMetadata: true });
-      return { results: (res.matches ?? []).map((m) => m.metadata?.text as string).filter(Boolean) };
+    case "sonny_add_book": {
+      const title = args.title as string;
+      const author = args.author as string | undefined;
+      const status = (args.status as Book["status"] | undefined) ?? "want_to_read";
+      const results = await searchBooks(author ? `${title} ${author}` : title, 3).catch(() => []);
+      const top = results[0];
+      if (!top) return { success: false, reply: `Couldn't find "${title}" on Google Books. Try including the author name.` };
+      const isbn = top.isbn;
+      const coverUrl = top.coverUrl ?? (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined);
+      const book: Book = {
+        id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        title: top.title,
+        author: top.authors[0] ?? author ?? "Unknown",
+        isbn,
+        coverUrl,
+        status,
+        source: "other",
+        dateAdded: new Date().toISOString().slice(0, 10),
+      };
+      await addBook(userId, book);
+      return { success: true, reply: `Added *${book.title}* by ${book.author} to your library with status "${status}".` };
     }
-    case "sonny_search_movies": {
-      const vector = await embedQuery(args.query as string);
-      const res = await getIndex().namespace("shared-movies").query({ vector, topK: (args.topK as number) ?? 5, includeMetadata: true });
-      return { results: (res.matches ?? []).map((m) => m.metadata?.text as string).filter(Boolean) };
+    case "sonny_add_movie": {
+      const title = args.title as string;
+      const status = (args.status as Movie["status"] | undefined) ?? "watchlist";
+      const currentSeason = args.currentSeason as number | undefined;
+      const currentEpisode = args.currentEpisode as number | undefined;
+      const results = await searchMoviesAndTV(title, 3).catch(() => []);
+      const top = results[0];
+      if (!top) return { success: false, reply: `Couldn't find "${title}" on TMDb. Try the full title.` };
+      const movie: Movie = {
+        id: `movie-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        title: top.title,
+        type: top.type,
+        year: top.releaseDate ? new Date(top.releaseDate).getFullYear() : undefined,
+        seasons: top.seasons,
+        runtime: top.runtime ? `${Math.floor(top.runtime / 60)}h ${top.runtime % 60}m` : undefined,
+        coverUrl: top.posterUrl ?? undefined,
+        tmdbId: top.id,
+        status,
+        currentSeason,
+        currentEpisode,
+        dateAdded: new Date().toISOString().slice(0, 10),
+      };
+      await addMovie(movie);
+      const progressPart = currentSeason != null ? ` (S${currentSeason}${currentEpisode != null ? `E${currentEpisode}` : ""})` : "";
+      return { success: true, reply: `Added *${movie.title}*${progressPart} to your library with status "${status}".` };
     }
     case "sonny_search_audible":
       return { results: await searchAudibleLibrary(args.query as string) };

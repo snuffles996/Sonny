@@ -40,7 +40,6 @@ function userNamespaces(userId: UserId): string[] {
     personal,
     savedSearch,
     NAMESPACES.sharedRestaurants,
-    NAMESPACES.sharedMovies,
     NAMESPACES.sharedRecipes,
     NAMESPACES.sharedTravel,
   ];

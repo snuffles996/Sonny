@@ -21,7 +21,6 @@ export const NAMESPACES = {
   kylieNotes: "kylie-notes",
   kylieConversations: "kylie-conversations",
   sharedRestaurants: "shared-restaurants",
-  sharedMovies: "shared-movies",
   sharedRecipes: "shared-recipes",
   sharedTravel: "shared-travel",
 } as const;

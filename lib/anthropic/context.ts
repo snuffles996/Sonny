@@ -15,7 +15,6 @@ export interface ContextMatch {
 
 export interface BroadContext {
   notes: ContextMatch[];
-  movies: ContextMatch[];
   restaurants: ContextMatch[];
   recipes: ContextMatch[];
   activeMealPlan: MealPlan | null;
@@ -59,9 +58,8 @@ export async function loadBroadContext(
     getBooks(userId),
   ]);
 
-  const [notes, movies, restaurants, recipes] = await Promise.all([
+  const [notes, restaurants, recipes] = await Promise.all([
     queryNamespace(vector, notesNs),
-    queryNamespace(vector, NAMESPACES.sharedMovies),
     queryNamespace(vector, NAMESPACES.sharedRestaurants),
     queryNamespace(vector, NAMESPACES.sharedRecipes),
   ]);
@@ -83,5 +81,5 @@ export async function loadBroadContext(
     status: b.status,
   }));
 
-  return { notes, movies, restaurants, recipes, activeMealPlan, movieLibrary, bookLibrary };
+  return { notes, restaurants, recipes, activeMealPlan, movieLibrary, bookLibrary };
 }
