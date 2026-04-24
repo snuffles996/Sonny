@@ -27,8 +27,8 @@ import { isCalDAVConfigured } from "@/lib/caldav/client";
 import { getPantryStaples, addStaples, removeStaples } from "@/lib/pantry/store";
 import { searchAudibleLibrary } from "@/lib/books/audible-library";
 import { runWebSearch } from "@/lib/search/webSearch";
-import { getBooks, addBook } from "@/lib/books/store";
-import { getMovies, addMovie } from "@/lib/movies/store";
+import { getBooks, addBook, updateBook } from "@/lib/books/store";
+import { getMovies, addMovie, updateMovie } from "@/lib/movies/store";
 import { searchBooks } from "@/lib/books/search";
 import { searchMoviesAndTV } from "@/lib/movies/search";
 import type { Book } from "@/lib/books/types";
@@ -73,7 +73,9 @@ const TOOLS: Tool[] = [
 
   // Search
   { name: "sonny_add_book", description: "Add a book to the user's library. Looks up metadata via Google Books and saves to Redis. Status defaults to 'want_to_read'.", inputSchema: { type: "object", properties: { title: { type: "string" }, author: { type: "string", description: "Optional — improves search accuracy" }, status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"], description: "Default: want_to_read" } }, required: ["title"] } },
+  { name: "sonny_update_book", description: "Update fields on an existing book in the user's library. Finds by title (fuzzy match). Updatable fields: status, rating, notes, dateStarted, dateFinished.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"] }, rating: { type: "number", description: "1–5" }, notes: { type: "string" }, dateStarted: { type: "string", description: "e.g. 2026-04-01" }, dateFinished: { type: "string", description: "e.g. 2026-04-23" } }, required: ["title"] } },
   { name: "sonny_add_movie", description: "Add a movie or TV show to the shared library. Looks up metadata via TMDb and saves to Redis. Status defaults to 'watchlist'.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Default: watchlist" }, currentSeason: { type: "number" }, currentEpisode: { type: "number" } }, required: ["title"] } },
+  { name: "sonny_update_movie", description: "Update fields on an existing movie or TV show in the shared library. Finds by title (fuzzy match). Updatable fields: status, rating, notes, streamingOn, currentSeason, currentEpisode, dateWatched.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"] }, rating: { type: "number", description: "1–5" }, notes: { type: "string" }, streamingOn: { type: "array", items: { type: "string" }, description: "e.g. [\"Netflix\"]" }, currentSeason: { type: "number" }, currentEpisode: { type: "number" }, dateWatched: { type: "string", description: "e.g. 2026-04-23" } }, required: ["title"] } },
   { name: "sonny_search_audible", description: "Semantic search over Kevin's Audible library (kevin-audible namespace).", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "sonny_web_search", description: "Run a web search via Anthropic's web_search tool and return a synthesized answer with source URLs.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
 
@@ -286,6 +288,40 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
       await addMovie(movie);
       const progressPart = currentSeason != null ? ` (S${currentSeason}${currentEpisode != null ? `E${currentEpisode}` : ""})` : "";
       return { success: true, reply: `Added *${movie.title}*${progressPart} to your library with status "${status}".` };
+    }
+    case "sonny_update_book": {
+      const title = args.title as string;
+      const books = await getBooks(userId);
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const book = books.find((b) => norm(b.title).includes(norm(title)) || norm(title).includes(norm(b.title)));
+      if (!book) return { success: false, reply: `Couldn't find "${title}" in your library.` };
+      const updates: Partial<Book> = {};
+      if (args.status !== undefined) updates.status = args.status as Book["status"];
+      if (args.rating !== undefined) updates.rating = args.rating as number;
+      if (args.notes !== undefined) updates.notes = args.notes as string;
+      if (args.dateStarted !== undefined) updates.dateStarted = args.dateStarted as string;
+      if (args.dateFinished !== undefined) updates.dateFinished = args.dateFinished as string;
+      const updated = await updateBook(userId, book.id, updates);
+      if (!updated) return { success: false, reply: `Update failed for "${book.title}".` };
+      return { success: true, reply: `Updated *${updated.title}*.` };
+    }
+    case "sonny_update_movie": {
+      const title = args.title as string;
+      const movies = await getMovies();
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const movie = movies.find((m) => norm(m.title).includes(norm(title)) || norm(title).includes(norm(m.title)));
+      if (!movie) return { success: false, reply: `Couldn't find "${title}" in the library.` };
+      const updates: Partial<Movie> = {};
+      if (args.status !== undefined) updates.status = args.status as Movie["status"];
+      if (args.rating !== undefined) updates.rating = args.rating as number;
+      if (args.notes !== undefined) updates.notes = args.notes as string;
+      if (args.streamingOn !== undefined) updates.streamingOn = args.streamingOn as string[];
+      if (args.currentSeason !== undefined) updates.currentSeason = args.currentSeason as number;
+      if (args.currentEpisode !== undefined) updates.currentEpisode = args.currentEpisode as number;
+      if (args.dateWatched !== undefined) updates.dateWatched = args.dateWatched as string;
+      const updated = await updateMovie(movie.id, updates);
+      if (!updated) return { success: false, reply: `Update failed for "${movie.title}".` };
+      return { success: true, reply: `Updated *${updated.title}*.` };
     }
     case "sonny_search_audible":
       return { results: await searchAudibleLibrary(args.query as string) };

@@ -363,8 +363,10 @@ Both resolve via the same `KEVIN_SECRET` / `KYLIE_SECRET` env vars as the rest o
 | `sonny_update_pantry` | Redis `pantry:shared` |
 | `sonny_get_books` | Redis `library:{userId}:books` — supports optional `status` filter |
 | `sonny_add_book` | Google Books lookup → Redis `library:{userId}:books` |
+| `sonny_update_book` | Fuzzy title match → patch status/rating/notes/dates in Redis |
 | `sonny_get_movies` | Redis `library:shared:movies` — supports optional `status` + `type` filters |
 | `sonny_add_movie` | TMDb lookup → Redis `library:shared:movies` |
+| `sonny_update_movie` | Fuzzy title match → patch status/rating/notes/season/episode in Redis |
 | `sonny_search_audible` | Pinecone `kevin-audible` |
 | `sonny_web_search` | Anthropic `web_search_20260209` |
 | `sonny_list_all_lists` | Redis `list-index:{userId}` — enumerate all list names before fetching |
