@@ -72,9 +72,9 @@ const TOOLS: Tool[] = [
   { name: "sonny_get_movies", description: "Return the shared movie/TV library from Redis. Each entry has title, type (movie/tv), status (maybe/watchlist/watching/seen), and optional rating (1–5), notes, streamingOn, seasons.", inputSchema: { type: "object", properties: { status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Filter by status (omit for all)" }, type: { type: "string", enum: ["movie", "tv"], description: "Filter by movie or tv (omit for all)" } } } },
 
   // Search
-  { name: "sonny_add_book", description: "Add a book to the user's library. Looks up metadata via Google Books and saves to Redis. Status defaults to 'want_to_read'.", inputSchema: { type: "object", properties: { title: { type: "string" }, author: { type: "string", description: "Optional — improves search accuracy" }, status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"], description: "Default: want_to_read" } }, required: ["title"] } },
+  { name: "sonny_add_book", description: "Add a book to the user's library. Looks up metadata via Google Books automatically — title/author/cover populated from API. If the book isn't found on Google Books, provide 'author' to add manually. All optional fields (series, isbn, coverUrl, year, source, tags, rating, notes, dateStarted, dateFinished) can be provided for either path.", inputSchema: { type: "object", properties: { title: { type: "string" }, author: { type: "string", description: "Improves search accuracy; required for manual entry if Google Books lookup fails" }, status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"], description: "Default: want_to_read" }, year: { type: "number" }, isbn: { type: "string" }, coverUrl: { type: "string" }, series: { type: "string" }, seriesPosition: { type: "number" }, source: { type: "string", enum: ["audible", "physical", "kindle", "other"] }, tags: { type: "array", items: { type: "string" } }, rating: { type: "number", description: "1–5" }, notes: { type: "string" }, dateStarted: { type: "string", description: "e.g. 2026-04-01" }, dateFinished: { type: "string", description: "e.g. 2026-04-23" } }, required: ["title"] } },
   { name: "sonny_update_book", description: "Update fields on an existing book in the user's library. Finds by title (fuzzy match). Updatable fields: status, rating, notes, dateStarted, dateFinished.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["shelf", "want_to_read", "reading", "finished"] }, rating: { type: "number", description: "1–5" }, notes: { type: "string" }, dateStarted: { type: "string", description: "e.g. 2026-04-01" }, dateFinished: { type: "string", description: "e.g. 2026-04-23" } }, required: ["title"] } },
-  { name: "sonny_add_movie", description: "Add a movie or TV show to the shared library. Looks up metadata via TMDb and saves to Redis. Status defaults to 'watchlist'.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Default: watchlist" }, currentSeason: { type: "number" }, currentEpisode: { type: "number" } }, required: ["title"] } },
+  { name: "sonny_add_movie", description: "Add a movie or TV show to the shared library. Looks up metadata via TMDb automatically — title/year/poster/type populated from API. If the title isn't found on TMDb, provide 'type' (movie or tv) to add manually. All optional fields (type, year, coverUrl, director, streamingOn, seasons, runtime, rating, notes, currentSeason, currentEpisode, dateWatched) can be provided for either path.", inputSchema: { type: "object", properties: { title: { type: "string" }, type: { type: "string", enum: ["movie", "tv"], description: "Required for manual entry if TMDb lookup fails" }, status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"], description: "Default: watchlist" }, year: { type: "number" }, coverUrl: { type: "string" }, director: { type: "string" }, streamingOn: { type: "array", items: { type: "string" }, description: "e.g. [\"Netflix\"]" }, seasons: { type: "number", description: "Total seasons for TV shows" }, runtime: { type: "string", description: "e.g. '2h 15m'" }, rating: { type: "number", description: "1–5" }, notes: { type: "string" }, currentSeason: { type: "number" }, currentEpisode: { type: "number" }, dateWatched: { type: "string", description: "e.g. 2026-04-23" } }, required: ["title"] } },
   { name: "sonny_update_movie", description: "Update fields on an existing movie or TV show in the shared library. Finds by title (fuzzy match). Updatable fields: status, rating, notes, streamingOn, currentSeason, currentEpisode, dateWatched.", inputSchema: { type: "object", properties: { title: { type: "string" }, status: { type: "string", enum: ["maybe", "watchlist", "watching", "seen"] }, rating: { type: "number", description: "1–5" }, notes: { type: "string" }, streamingOn: { type: "array", items: { type: "string" }, description: "e.g. [\"Netflix\"]" }, currentSeason: { type: "number" }, currentEpisode: { type: "number" }, dateWatched: { type: "string", description: "e.g. 2026-04-23" } }, required: ["title"] } },
   { name: "sonny_search_audible", description: "Semantic search over Kevin's Audible library (kevin-audible namespace).", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "sonny_web_search", description: "Run a web search via Anthropic's web_search tool and return a synthesized answer with source URLs.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
@@ -245,21 +245,43 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
       const title = args.title as string;
       const author = args.author as string | undefined;
       const status = (args.status as Book["status"] | undefined) ?? "want_to_read";
+
       const results = await searchBooks(author ? `${title} ${author}` : title, 3).catch(() => []);
       const top = results[0];
-      if (!top) return { success: false, reply: `Couldn't find "${title}" on Google Books. Try including the author name.` };
-      const isbn = top.isbn;
-      const coverUrl = top.coverUrl ?? (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined);
-      const book: Book = {
-        id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        title: top.title,
-        author: top.authors[0] ?? author ?? "Unknown",
-        isbn,
-        coverUrl,
-        status,
-        source: "other",
-        dateAdded: new Date().toISOString().slice(0, 10),
-      };
+
+      let book: Book;
+      if (top) {
+        const isbn = (args.isbn as string | undefined) ?? top.isbn;
+        const coverUrl = (args.coverUrl as string | undefined) ?? top.coverUrl ?? (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined);
+        book = {
+          id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: top.title,
+          author: top.authors[0] ?? author ?? "Unknown",
+          isbn, coverUrl, status,
+          source: (args.source as Book["source"] | undefined) ?? "other",
+          dateAdded: new Date().toISOString().slice(0, 10),
+        };
+      } else if (author) {
+        const isbn = args.isbn as string | undefined;
+        const coverUrl = (args.coverUrl as string | undefined) ?? (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : undefined);
+        book = {
+          id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title, author, isbn, coverUrl, status,
+          source: (args.source as Book["source"] | undefined) ?? "other",
+          dateAdded: new Date().toISOString().slice(0, 10),
+        };
+      } else {
+        return { success: false, reply: `Couldn't find "${title}" on Google Books. To add manually, provide the 'author' field.` };
+      }
+
+      if (args.series !== undefined) book.series = args.series as string;
+      if (args.seriesPosition !== undefined) book.seriesPosition = args.seriesPosition as number;
+      if (args.tags !== undefined) book.tags = args.tags as string[];
+      if (args.rating !== undefined) book.rating = args.rating as number;
+      if (args.notes !== undefined) book.notes = args.notes as string;
+      if (args.dateStarted !== undefined) book.dateStarted = args.dateStarted as string;
+      if (args.dateFinished !== undefined) book.dateFinished = args.dateFinished as string;
+
       await addBook(userId, book);
       return { success: true, reply: `Added *${book.title}* by ${book.author} to your library with status "${status}".` };
     }
@@ -268,23 +290,46 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
       const status = (args.status as Movie["status"] | undefined) ?? "watchlist";
       const currentSeason = args.currentSeason as number | undefined;
       const currentEpisode = args.currentEpisode as number | undefined;
+
       const results = await searchMoviesAndTV(title, 3).catch(() => []);
       const top = results[0];
-      if (!top) return { success: false, reply: `Couldn't find "${title}" on TMDb. Try the full title.` };
-      const movie: Movie = {
-        id: `movie-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        title: top.title,
-        type: top.type,
-        year: top.releaseDate ? new Date(top.releaseDate).getFullYear() : undefined,
-        seasons: top.seasons,
-        runtime: top.runtime ? `${Math.floor(top.runtime / 60)}h ${top.runtime % 60}m` : undefined,
-        coverUrl: top.posterUrl ?? undefined,
-        tmdbId: top.id,
-        status,
-        currentSeason,
-        currentEpisode,
-        dateAdded: new Date().toISOString().slice(0, 10),
-      };
+
+      let movie: Movie;
+      if (top) {
+        movie = {
+          id: `movie-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: top.title,
+          type: top.type,
+          year: (args.year as number | undefined) ?? (top.releaseDate ? new Date(top.releaseDate).getFullYear() : undefined),
+          seasons: (args.seasons as number | undefined) ?? top.seasons,
+          runtime: (args.runtime as string | undefined) ?? (top.runtime ? `${Math.floor(top.runtime / 60)}h ${top.runtime % 60}m` : undefined),
+          coverUrl: (args.coverUrl as string | undefined) ?? top.posterUrl ?? undefined,
+          tmdbId: top.id,
+          status, currentSeason, currentEpisode,
+          dateAdded: new Date().toISOString().slice(0, 10),
+        };
+      } else if (args.type) {
+        movie = {
+          id: `movie-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title,
+          type: args.type as Movie["type"],
+          year: args.year as number | undefined,
+          seasons: args.seasons as number | undefined,
+          runtime: args.runtime as string | undefined,
+          coverUrl: args.coverUrl as string | undefined,
+          status, currentSeason, currentEpisode,
+          dateAdded: new Date().toISOString().slice(0, 10),
+        };
+      } else {
+        return { success: false, reply: `Couldn't find "${title}" on TMDb. To add manually, provide the 'type' field ("movie" or "tv").` };
+      }
+
+      if (args.director !== undefined) movie.director = args.director as string;
+      if (args.streamingOn !== undefined) movie.streamingOn = args.streamingOn as string[];
+      if (args.rating !== undefined) movie.rating = args.rating as number;
+      if (args.notes !== undefined) movie.notes = args.notes as string;
+      if (args.dateWatched !== undefined) movie.dateWatched = args.dateWatched as string;
+
       await addMovie(movie);
       const progressPart = currentSeason != null ? ` (S${currentSeason}${currentEpisode != null ? `E${currentEpisode}` : ""})` : "";
       return { success: true, reply: `Added *${movie.title}*${progressPart} to your library with status "${status}".` };
