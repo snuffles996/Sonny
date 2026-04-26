@@ -1,13 +1,12 @@
 // GET /api/recipes/photo?src=<encoded-blob-url>
 // Proxies private Vercel Blob images so they can be displayed in <img> tags.
+// No auth check — the blob URL embedded in `src` is a non-guessable capability URL
+// only reachable through the authenticated recipe API.
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateUser } from "@/lib/auth";
 
 const BLOB_HOST = "blob.vercel-storage.com";
 
 export async function GET(req: NextRequest) {
-  const userId = authenticateUser(req);
-  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
 
   const src = req.nextUrl.searchParams.get("src");
   if (!src) return new NextResponse("src required", { status: 400 });
