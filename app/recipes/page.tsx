@@ -45,6 +45,7 @@ export default function RecipesPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -116,6 +117,7 @@ export default function RecipesPage() {
     setForm(EMPTY_FORM);
     setPhotoFile(null);
     setPhotoPreviewUrl(null);
+    setUploadError(null);
     setShowForm(false);
   }
 
@@ -124,6 +126,7 @@ export default function RecipesPage() {
     if (!form.ingredients.trim() && !form.instructions.trim()) return;
     setSaving(true);
 
+    setUploadError(null);
     try {
       let photoUrl: string | undefined;
 
@@ -138,6 +141,9 @@ export default function RecipesPage() {
         if (uploadRes.ok) {
           const uploadData = await uploadRes.json();
           photoUrl = uploadData.url;
+        } else {
+          const errData = await uploadRes.json().catch(() => ({}));
+          setUploadError(errData.error ?? "Photo upload failed — recipe will be saved without it.");
         }
       }
 
@@ -199,6 +205,7 @@ export default function RecipesPage() {
           placeholder="Search by name or ingredient…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         />
       </div>
 
@@ -335,6 +342,9 @@ export default function RecipesPage() {
               </div>
             </div>
 
+            {uploadError && (
+              <div className={styles.uploadError}>{uploadError}</div>
+            )}
             <div className={styles.formActions}>
               <button className={styles.formCancelBtn} onClick={resetForm}>Cancel</button>
               <button

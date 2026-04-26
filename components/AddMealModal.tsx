@@ -31,6 +31,7 @@ export default function AddMealModal({ availableRecipes, onAdd, onCancel }: Prop
           placeholder="Search recipes…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           autoComplete="off"
           autoFocus
         />

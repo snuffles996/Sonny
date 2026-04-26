@@ -34,6 +34,7 @@ export default function SwapMealModal({ meal, availableRecipes, onSwap, onCancel
           placeholder="Search recipes…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           autoComplete="off"
         />
 

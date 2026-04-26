@@ -493,6 +493,17 @@
   cursor: default;
 }
 
+.uploadError {
+  margin: 0 1.25rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #1a0a0a;
+  border: 1px solid #3a1a1a;
+  border-radius: 8px;
+  color: #f87171;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .formCancelBtn {
   background: #1a1a1a;
   color: #888;
