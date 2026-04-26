@@ -60,9 +60,10 @@ export async function saveGroceryList(items: GroceryItem[]): Promise<void> {
 export async function addManualGroceryItem(name: string): Promise<string[]> {
   const redis = getRedisClient();
   const stored = (await redis.get<StoredGrocery>(GROCERY_KEY)) ?? { items: [], checkedItems: [], manualItems: [] };
+  const existing = stored.manualItems ?? [];
   const trimmed = name.trim();
-  if (!trimmed || stored.manualItems.includes(trimmed)) return stored.manualItems;
-  const updated = [...stored.manualItems, trimmed];
+  if (!trimmed || existing.includes(trimmed)) return existing;
+  const updated = [...existing, trimmed];
   await redis.set(GROCERY_KEY, { ...stored, manualItems: updated });
   return updated;
 }
@@ -71,7 +72,8 @@ export async function removeManualGroceryItem(name: string): Promise<string[]> {
   const redis = getRedisClient();
   const stored = await redis.get<StoredGrocery>(GROCERY_KEY);
   if (!stored) return [];
-  const updated = stored.manualItems.filter((n) => n !== name);
+  const existing = stored.manualItems ?? [];
+  const updated = existing.filter((n) => n !== name);
   await redis.set(GROCERY_KEY, { ...stored, manualItems: updated });
   return updated;
 }
