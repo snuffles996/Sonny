@@ -21,7 +21,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const blob = await put(filename, file, { access: "private" });
-    return NextResponse.json({ url: blob.url });
+    // Private blob URLs require Authorization headers that <img> tags can't send.
+    // Return a proxy URL instead so images display correctly in the browser.
+    const proxyUrl = `/api/recipes/photo?src=${encodeURIComponent(blob.url)}`;
+    return NextResponse.json({ url: proxyUrl });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
