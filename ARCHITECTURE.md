@@ -193,7 +193,6 @@ Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, return
 | `mealplan:shared:active` | `MealPlan` | shared | `lib/mealplan/store.ts` |
 | `mealplan:shared:history` | `MealPlan[]` | shared | `lib/mealplan/store.ts` |
 | `mealplan:shared:grocery` | `{ items, checkedItems }` | shared | `lib/mealplan/store.ts` |
-| `mealplan:shared:pantry_exclusions` | `string[]` | shared | `lib/mealplan/pantry.ts` |
 | `mealplan:shared:unit_aliases` | `Record<string, string>` | shared | `lib/mealplan/grocery.ts` |
 | `pantry:shared` | `string[]` | shared | `lib/pantry/store.ts` |
 | `category-overrides:shared` | `Record<string, string>` | shared | `lib/lists/overrides.ts` |
@@ -205,11 +204,9 @@ Classifier: `lib/anthropic/classify.ts` — Haiku with forced `tool_use`, return
 
 All stores use a **full-replace pattern** — fetch current value, merge/update, write back. No atomic partial updates.
 
-### Pantry: two stores, one read path
+### Pantry
 
-- `pantry:shared` — chat-editable staples (`staples_update` intent, `lib/pantry/store.ts`)
-- `mealplan:shared:pantry_exclusions` — grocery list exclusion overrides (`lib/mealplan/pantry.ts`)
-- `getCombinedExclusions()` in `lib/mealplan/pantry.ts` merges both at read time so grocery list reflects both sources
+Single source of truth: `pantry:shared` via `lib/pantry/store.ts`. All write paths (chat `staples_update`, `/api/pantry`, `/api/mealplan/exclusions`) resolve to `addStaples`/`removeStaples`. `lib/mealplan/pantry.ts` is a thin wrapper that preserves existing call sites. On first read after deploy, `getPantryStaples()` lazily migrates any data from the legacy `mealplan:shared:pantry_exclusions` key into `pantry:shared` and deletes the old key.
 
 ### Pinecone namespace map
 
@@ -444,7 +441,7 @@ After changing the tool list, users must re-sync the connector in claude.ai to p
 
 - **iCloud Reminders** — CloudKit-only; not accessible via CalDAV. Needs native Apple framework or HomeKit/Shortcuts bridge.
 - ~~**Auto-save quality tuning**~~ — Resolved: `save_decision` tool schema now includes `confidence: "high" | "low"`; only saves when both `should_save` and `confidence === "high"`. Reduces borderline noise.
-- **Pantry store unification** — `pantry:shared` and `mealplan:shared:pantry_exclusions` are merged at read time via `getCombinedExclusions()` but remain two separate write paths. A future pass could consolidate to one store.
+- ~~**Pantry store unification**~~ — Resolved: single `pantry:shared` key; `lib/mealplan/pantry.ts` is now a thin wrapper. Lazy migration absorbs `mealplan:shared:pantry_exclusions` on first read.
 - ~~**Web search save reliability**~~ — Resolved: both `decideSave` (web search) and `autoSaveExchange` now use `waitUntil()` from `@vercel/functions`, keeping the function alive after the response is sent.
 
 ### Open questions
