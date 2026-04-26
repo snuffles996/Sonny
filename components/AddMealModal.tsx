@@ -20,9 +20,10 @@ export default function AddMealModal({ availableRecipes, onAdd, onCancel }: Prop
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return availableRecipes;
-    return availableRecipes.filter((r) => r.name.toLowerCase().includes(q) || r.cuisine?.toLowerCase().includes(q));
-  }, [availableRecipes, search]);
+    const byType = availableRecipes.filter((r) => (r.mealType ?? "dinner") === mealType);
+    if (!q) return byType;
+    return byType.filter((r) => r.name.toLowerCase().includes(q) || r.cuisine?.toLowerCase().includes(q));
+  }, [availableRecipes, mealType, search]);
 
   return (
     <div className={styles.overlay} onClick={onCancel}>

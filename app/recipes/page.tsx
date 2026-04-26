@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import BottomNav from "@/components/BottomNav";
-import type { Recipe } from "@/lib/recipes/types";
+import type { Recipe, RecipeMealType } from "@/lib/recipes/types";
 import styles from "./recipes.module.css";
 
 const TOKEN_KEY = "sonny_token";
@@ -20,11 +20,12 @@ interface RecipeForm {
   notes: string;
   ingredients: string;
   instructions: string;
+  mealType: RecipeMealType;
 }
 
 const EMPTY_FORM: RecipeForm = {
   name: "", cuisine: "", source: "", servings: "", totalTime: "",
-  notes: "", ingredients: "", instructions: "",
+  notes: "", ingredients: "", instructions: "", mealType: "dinner",
 };
 
 export default function RecipesPage() {
@@ -142,6 +143,7 @@ export default function RecipesPage() {
       notes: recipe.notes ?? "",
       ingredients: ingrMatch?.[1]?.trim() ?? "",
       instructions: instrMatch?.[1]?.trim() ?? "",
+      mealType: recipe.mealType ?? "dinner",
     });
     setPhotoFile(null);
     setPhotoPreviewUrl(null);
@@ -205,6 +207,7 @@ export default function RecipesPage() {
             cuisine: form.cuisine.trim(),
             source: form.source.trim() || "manual",
             content,
+            mealType: form.mealType,
             ...(form.servings && { servings: parseInt(form.servings, 10) }),
             ...(form.totalTime.trim() && { totalTime: form.totalTime.trim() }),
             ...(form.notes.trim() && { notes: form.notes.trim() }),
@@ -342,6 +345,22 @@ export default function RecipesPage() {
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Name *</label>
                 <input className={styles.formInput} placeholder="e.g. Chicken Tikka Masala" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Meal type</label>
+                <div className={styles.mealTypePicker}>
+                  {(["breakfast", "lunch", "dinner"] as RecipeMealType[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`${styles.mealTypePill} ${form.mealType === t ? styles.mealTypeActive : ""}`}
+                      onClick={() => setForm({ ...form, mealType: t })}
+                    >
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className={styles.formRow}>

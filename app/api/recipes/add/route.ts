@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
       servings?: number;
       totalTime?: string;
       photoUrl?: string;
+      mealType?: "breakfast" | "lunch" | "dinner";
       notes?: string;
     };
   } | null;
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.recipe) {
-    const { name, content, cuisine, source, servings, totalTime, photoUrl, notes } = body.recipe;
+    const { name, content, cuisine, source, servings, totalTime, photoUrl, mealType, notes } = body.recipe;
     if (!name?.trim() || !content?.trim() || !cuisine?.trim()) {
       return NextResponse.json({ error: "name, content, and cuisine are required" }, { status: 400 });
     }
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       cuisine: cuisine.trim(),
       source: source?.trim() || "manual",
       content: content.trim(),
+      mealType: mealType ?? "dinner",
       ...(servings != null && { servings }),
       ...(totalTime && { totalTime: totalTime.trim() }),
       ...(photoUrl && { photoUrl }),

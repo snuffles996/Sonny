@@ -545,3 +545,25 @@
   padding: 0.7rem 1.25rem;
   cursor: pointer;
 }
+
+.mealTypePicker {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mealTypePill {
+  flex: 1;
+  padding: 0.4rem 0;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #555;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.mealTypeActive {
+  background: #1a1a1a;
+  border-color: #444;
+  color: #e8e8e8;
+}
