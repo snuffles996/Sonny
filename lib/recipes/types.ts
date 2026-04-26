@@ -4,6 +4,7 @@ export interface Recipe {
   cuisine: string;
   source: string;
   url?: string;
+  photoUrl?: string; // Vercel Blob URL for photo-imported recipes
   servings?: number;
   totalTime?: string;
   addedDate?: string;

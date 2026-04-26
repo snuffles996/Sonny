@@ -41,6 +41,7 @@ import { extractProfileUpdate } from "@/lib/anthropic/profile";
 import { detectTeam, findGame, getScore, getStandings } from "@/lib/sports/lookup";
 import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
 import type { UserId } from "@/lib/profile/types";
+import type { Recipe as RecipeType } from "@/lib/recipes/types";
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ const TOOLS: Tool[] = [
   { name: "sonny_get_grocery_list", description: "Return the grocery list for the active meal plan, grouped by category. Builds and caches automatically.", inputSchema: { type: "object", properties: {} } },
 
   // Recipes
-  { name: "sonny_add_recipe", description: "Fetch a recipe page by URL, extract structured data via Haiku, and save it to the library.", inputSchema: { type: "object", properties: { url: { type: "string", description: "Full URL of the recipe page" } }, required: ["url"] } },
+  { name: "sonny_add_recipe", description: "Save a recipe to the library. Provide either a URL (Haiku extracts it automatically) or structured fields for manual/photo entry. For photo imports, extract all fields from the image first, then call this tool with the structured data.", inputSchema: { type: "object", properties: { url: { type: "string", description: "Full URL of the recipe page (use this OR the structured fields below)" }, name: { type: "string", description: "Recipe name (for manual/photo entry)" }, content: { type: "string", description: "Full recipe in markdown with ## Ingredients and ## Instructions sections" }, cuisine: { type: "string", description: "Cuisine type, e.g. Italian, Mexican, American" }, source: { type: "string", description: "Source label, e.g. 'photo', 'handwritten', 'cookbook'. Defaults to 'manual'" }, servings: { type: "number" }, totalTime: { type: "string", description: "e.g. '45 minutes'" }, photoUrl: { type: "string", description: "Vercel Blob URL of the uploaded recipe photo (from /api/recipes/upload-photo)" }, notes: { type: "string" } } } },
   { name: "sonny_list_recipes", description: "Return all recipes in the library.", inputSchema: { type: "object", properties: {} } },
 
   // Calendar
@@ -189,8 +190,32 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
 
     // ── Recipes ────────────────────────────────────────────────────────────────
     case "sonny_add_recipe": {
-      const recipe = await extractRecipeFromUrl(args.url as string);
-      if (!recipe) return { error: "Could not extract recipe from that URL" };
+      if (args.url) {
+        const recipe = await extractRecipeFromUrl(args.url as string);
+        if (!recipe) return { error: "Could not extract recipe from that URL" };
+        await addRecipe(recipe);
+        return { recipe, saved: true };
+      }
+      // Manual / photo entry path
+      const name = (args.name as string | undefined)?.trim();
+      const content = (args.content as string | undefined)?.trim();
+      const cuisine = (args.cuisine as string | undefined)?.trim();
+      if (!name || !content || !cuisine) {
+        return { error: "Provide either url, or name + content + cuisine for manual entry" };
+      }
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+      const recipe: RecipeType = {
+        slug,
+        name,
+        cuisine,
+        source: (args.source as string | undefined)?.trim() || "manual",
+        content,
+        addedDate: new Date().toISOString().slice(0, 10),
+        ...(args.servings != null ? { servings: args.servings as number } : {}),
+        ...(args.totalTime ? { totalTime: (args.totalTime as string).trim() } : {}),
+        ...(args.photoUrl ? { photoUrl: args.photoUrl as string } : {}),
+        ...(args.notes ? { notes: (args.notes as string).trim() } : {}),
+      };
       await addRecipe(recipe);
       return { recipe, saved: true };
     }

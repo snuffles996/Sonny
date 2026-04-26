@@ -309,3 +309,196 @@
   color: #555;
   font-size: 0.9rem;
 }
+
+/* Header row with Add button */
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.addRecipeBtn {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.85rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 999px;
+  color: #aaa;
+  cursor: pointer;
+}
+
+/* Photo thumbnail in detail sheet */
+.sheetPhoto {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+/* Manual entry form modal */
+.formOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+}
+
+.formSheet {
+  background: #111;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.formHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.25rem 0.75rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+.formTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.formBody {
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  flex: 1;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.formBody::-webkit-scrollbar {
+  display: none;
+}
+
+.formRow {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.formLabel {
+  font-size: 0.75rem;
+  color: #555;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.formInput {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.formInput:focus {
+  border-color: #444;
+}
+
+.formTextarea {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.formTextarea:focus {
+  border-color: #444;
+}
+
+.formTextarea::placeholder,
+.formInput::placeholder {
+  color: #3a3a3a;
+}
+
+.photoUploadBtn {
+  background: #1a1a1a;
+  border: 1px dashed #2a2a2a;
+  border-radius: 8px;
+  color: #555;
+  font-size: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.photoPreview {
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-top: 0.4rem;
+}
+
+.formActions {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem 1rem;
+  flex-shrink: 0;
+  border-top: 1px solid #1e1e1e;
+}
+
+.formSubmitBtn {
+  flex: 1;
+  background: #fff;
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.7rem;
+  cursor: pointer;
+}
+
+.formSubmitBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.formCancelBtn {
+  background: #1a1a1a;
+  color: #888;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  padding: 0.7rem 1.25rem;
+  cursor: pointer;
+}

@@ -41,12 +41,17 @@ Write summaries in third person, past tense. Start with the date.`,
               type: "boolean",
               description: "Whether this exchange contains something worth saving to long-term memory",
             },
+            confidence: {
+              type: "string",
+              enum: ["high", "low"],
+              description: "high if clearly worth saving, low if borderline or uncertain",
+            },
             summary: {
               type: "string",
               description: `Concise note text if should_save is true. Must start with "${dateLabel}: " and summarize only the notable information — not the full exchange. Omit if should_save is false.`,
             },
           },
-          required: ["should_save"],
+          required: ["should_save", "confidence"],
         },
       },
     ],
@@ -56,12 +61,13 @@ Write summaries in third person, past tense. Start with the date.`,
   const toolUse = response.content.find((b) => b.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") return;
 
-  const { should_save, summary } = toolUse.input as {
+  const { should_save, confidence, summary } = toolUse.input as {
     should_save: boolean;
+    confidence: "high" | "low";
     summary?: string;
   };
 
-  if (should_save && summary?.trim()) {
+  if (should_save && confidence === "high" && summary?.trim()) {
     await saveNote(userId, summary.trim());
   }
 }

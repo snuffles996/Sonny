@@ -34,6 +34,7 @@ export default function MealPlanPage() {
   // Grocery
   const [groceryItems, setGroceryItems] = useState<GroceryItem[] | null>(null);
   const [checkedItems, setCheckedItems] = useState<string[]>([]);
+  const [manualItems, setManualItems] = useState<string[]>([]);
   const [rebuilding, setRebuilding] = useState(false);
 
   // Pantry exclusions
@@ -68,6 +69,7 @@ export default function MealPlanPage() {
         if (groceryData.items) {
           setGroceryItems(groceryData.items);
           setCheckedItems(groceryData.checkedItems ?? []);
+          setManualItems(groceryData.manualItems ?? []);
         }
       })
       .finally(() => setLoading(false));
@@ -144,6 +146,28 @@ export default function MealPlanPage() {
     setCheckedItems([]);
   }
 
+  async function handleAddManual(name: string) {
+    if (!token) return;
+    const res = await fetch("/api/mealplan/grocery", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (data.manualItems) setManualItems(data.manualItems);
+  }
+
+  async function handleRemoveManual(name: string) {
+    if (!token) return;
+    const res = await fetch("/api/mealplan/grocery", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ removeManual: name }),
+    });
+    const data = await res.json();
+    if (data.manualItems) setManualItems(data.manualItems);
+  }
+
   async function handleClear() {
     if (!token) return;
     await fetch("/api/mealplan", {
@@ -153,6 +177,7 @@ export default function MealPlanPage() {
     setPlan(null);
     setGroceryItems(null);
     setCheckedItems([]);
+    setManualItems([]);
     setConfirmClear(false);
   }
 
@@ -182,6 +207,7 @@ export default function MealPlanPage() {
     if (data.items) {
       setGroceryItems(data.items);
       setCheckedItems(data.checkedItems ?? []);
+      setManualItems(data.manualItems ?? []);
     }
     setRebuilding(false);
   }
@@ -300,7 +326,10 @@ export default function MealPlanPage() {
               <GroceryList
                 items={groceryItems}
                 checkedItems={checkedItems}
+                manualItems={manualItems}
                 onToggleItem={handleToggleItem}
+                onAddManual={handleAddManual}
+                onRemoveManual={handleRemoveManual}
                 onRebuild={handleRebuild}
                 rebuilding={rebuilding}
               />

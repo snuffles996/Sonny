@@ -10,6 +10,7 @@ const GROCERY_KEY = "mealplan:shared:grocery";
 interface StoredGrocery {
   items: GroceryItem[];
   checkedItems: string[];
+  manualItems: string[];
 }
 
 export async function getActivePlan(): Promise<MealPlan | null> {
@@ -49,7 +50,30 @@ export async function getGroceryList(): Promise<StoredGrocery | null> {
 export async function saveGroceryList(items: GroceryItem[]): Promise<void> {
   const redis = getRedisClient();
   const current = await redis.get<StoredGrocery>(GROCERY_KEY);
-  await redis.set(GROCERY_KEY, { items, checkedItems: current?.checkedItems ?? [] });
+  await redis.set(GROCERY_KEY, {
+    items,
+    checkedItems: current?.checkedItems ?? [],
+    manualItems: current?.manualItems ?? [],
+  });
+}
+
+export async function addManualGroceryItem(name: string): Promise<string[]> {
+  const redis = getRedisClient();
+  const stored = (await redis.get<StoredGrocery>(GROCERY_KEY)) ?? { items: [], checkedItems: [], manualItems: [] };
+  const trimmed = name.trim();
+  if (!trimmed || stored.manualItems.includes(trimmed)) return stored.manualItems;
+  const updated = [...stored.manualItems, trimmed];
+  await redis.set(GROCERY_KEY, { ...stored, manualItems: updated });
+  return updated;
+}
+
+export async function removeManualGroceryItem(name: string): Promise<string[]> {
+  const redis = getRedisClient();
+  const stored = await redis.get<StoredGrocery>(GROCERY_KEY);
+  if (!stored) return [];
+  const updated = stored.manualItems.filter((n) => n !== name);
+  await redis.set(GROCERY_KEY, { ...stored, manualItems: updated });
+  return updated;
 }
 
 export async function toggleGroceryItem(itemName: string): Promise<string[]> {

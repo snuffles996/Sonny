@@ -434,14 +434,18 @@ After changing the tool list, users must re-sync the connector in claude.ai to p
 - **Weekly briefing cron** — stub at `app/api/cron/route.ts`; send meal plan + calendar summary Monday 8am to Kevin and Kylie.
 - **`PlannedMeal.mealType`** — extend to support breakfast/lunch/dinner type in meal planning.
 - **Kylie's Audible** — `audible_library` intent now searches `library:{userId}:books` automatically per-user. Kylie needs her own Audible export + sync run (`AUDIBLE_USER_ID=kylie node scripts/sync-audible.mjs kylie-library.json`).
-- **Book cover fallback quality** — Open Library coverage is incomplete. Consider adding a Google Books cover URL (available in the `searchBooks()` response via `info.imageLinks.thumbnail`) as a secondary source.
+- ~~**Book cover fallback quality**~~ — Already implemented: `searchBooks()` returns `coverUrl` from `info.imageLinks.thumbnail`; all handlers use `top.coverUrl ?? openlibrary` (Google Books primary, Open Library fallback by ISBN). TMDb poster coverage for movies/TV is near-complete, no fallback needed.
+- ~~**Recipe from photo**~~ — Implemented: `Recipe` type now has `photoUrl?: string`. `/api/recipes/add` accepts `{ url }` OR `{ recipe: { name, content, cuisine, ... } }`. `/api/recipes/upload-photo` uploads to Vercel Blob and returns a public URL. `sonny_add_recipe` MCP tool accepts either URL or structured fields. Recipe detail sheets display the photo when present. Workflow: user sends photo to claude.ai → Claude extracts data → calls `sonny_add_recipe` with structured fields + optional `photoUrl`.
+- ~~**Manual shopping list items**~~ — Implemented: `manualItems: string[]` added to `StoredGrocery` (persists across rebuilds). `POST /api/mealplan/grocery` adds an item; `PATCH { removeManual }` removes one. Grocery page shows a "My Items" section at top with an inline add input and × remove buttons. Manual items survive plan swaps and rebuilds.
+- **Multi-user list sharing (future)** — Currently recipes and meal plan are globally shared (`shared:` prefix); books and lists are per-user. Future: explicit share relationships so Kevin could share a recipe collection with his parents while they maintain their own independent meal plan. For now: manually combine/separate via Claude Code. Architecture decision deferred — needs a share graph in Redis and a per-resource permission model.
+- **Auth improvements (future)** — Current auth is static bearer tokens (`KEVIN_SECRET`, `KYLIE_SECRET`) in env vars. Desired: username/password login with change-password flow and self-serve account creation. Would replace or wrap the existing Bearer token check in `lib/auth/index.ts`. Requires a credential store (hashed passwords in Redis or a managed auth provider like Clerk). Deferred until user base grows beyond Kevin + Kylie.
 
 ### Infrastructure
 
 - **iCloud Reminders** — CloudKit-only; not accessible via CalDAV. Needs native Apple framework or HomeKit/Shortcuts bridge.
-- **Auto-save quality tuning** — Haiku decides what's notable on every non-write exchange. May produce noise over time; consider a confidence threshold or periodic Pinecone dedup pass.
+- ~~**Auto-save quality tuning**~~ — Resolved: `save_decision` tool schema now includes `confidence: "high" | "low"`; only saves when both `should_save` and `confidence === "high"`. Reduces borderline noise.
 - **Pantry store unification** — `pantry:shared` and `mealplan:shared:pantry_exclusions` are merged at read time via `getCombinedExclusions()` but remain two separate write paths. A future pass could consolidate to one store.
-- **Web search save reliability** — fire-and-forget `decideSave` can be dropped on Vercel function timeout; no retry mechanism.
+- ~~**Web search save reliability**~~ — Resolved: both `decideSave` (web search) and `autoSaveExchange` now use `waitUntil()` from `@vercel/functions`, keeping the function alive after the response is sent.
 
 ### Open questions
 

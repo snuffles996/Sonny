@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { getActivePlan } from "@/lib/mealplan/store";
-import { getGroceryList, saveGroceryList, toggleGroceryItem, clearGroceryList } from "@/lib/mealplan/store";
+import { getGroceryList, saveGroceryList, toggleGroceryItem, clearGroceryList, addManualGroceryItem, removeManualGroceryItem } from "@/lib/mealplan/store";
 import { getRecipes } from "@/lib/recipes/store";
 import { buildGroceryList } from "@/lib/mealplan/grocery";
 import { getCombinedExclusions } from "@/lib/mealplan/pantry";
@@ -19,21 +19,38 @@ export async function GET(req: NextRequest) {
 
   // Return cached list if available
   const cached = await getGroceryList();
-  if (cached) return NextResponse.json({ items: cached.items, checkedItems: cached.checkedItems });
+  if (cached) return NextResponse.json({ items: cached.items, checkedItems: cached.checkedItems, manualItems: cached.manualItems ?? [] });
 
   // Build and cache
   const [recipes, exclusions] = await Promise.all([getRecipes(), getCombinedExclusions()]);
   const items = await buildGroceryList(plan.meals, recipes, plan.servings, exclusions);
   await saveGroceryList(items);
-  return NextResponse.json({ items, checkedItems: [] });
+  return NextResponse.json({ items, checkedItems: [], manualItems: [] });
+}
+
+export async function POST(req: NextRequest) {
+  const userId = authenticateUser(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => null) as { name?: string } | null;
+  if (!body?.name?.trim()) return NextResponse.json({ error: "name required" }, { status: 400 });
+
+  const manualItems = await addManualGroceryItem(body.name);
+  return NextResponse.json({ manualItems });
 }
 
 export async function PATCH(req: NextRequest) {
   const userId = authenticateUser(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => null) as { itemName?: string } | null;
-  if (!body?.itemName) return NextResponse.json({ error: "itemName required" }, { status: 400 });
+  const body = await req.json().catch(() => null) as { itemName?: string; removeManual?: string } | null;
+
+  if (body?.removeManual) {
+    const manualItems = await removeManualGroceryItem(body.removeManual);
+    return NextResponse.json({ manualItems });
+  }
+
+  if (!body?.itemName) return NextResponse.json({ error: "itemName or removeManual required" }, { status: 400 });
 
   const checkedItems = await toggleGroceryItem(body.itemName);
   return NextResponse.json({ checkedItems });

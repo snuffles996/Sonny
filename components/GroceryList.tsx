@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { GroceryItem, FoodCategory } from "@/lib/mealplan/grocery";
 import styles from "./GroceryList.module.css";
 
@@ -12,12 +13,20 @@ const CATEGORY_ORDER: FoodCategory[] = [
 interface Props {
   items: GroceryItem[];
   checkedItems: string[];
+  manualItems: string[];
   onToggleItem: (name: string) => void;
+  onAddManual: (name: string) => void;
+  onRemoveManual: (name: string) => void;
   onRebuild: () => void;
   rebuilding?: boolean;
 }
 
-export default function GroceryList({ items, checkedItems, onToggleItem, onRebuild, rebuilding = false }: Props) {
+export default function GroceryList({
+  items, checkedItems, manualItems,
+  onToggleItem, onAddManual, onRemoveManual,
+  onRebuild, rebuilding = false,
+}: Props) {
+  const [draft, setDraft] = useState("");
   const checkedSet = new Set(checkedItems);
 
   const byCategory = new Map<FoodCategory, GroceryItem[]>();
@@ -26,16 +35,72 @@ export default function GroceryList({ items, checkedItems, onToggleItem, onRebui
     byCategory.get(item.category)!.push(item);
   }
 
+  function handleAddManual() {
+    const name = draft.trim();
+    if (!name) return;
+    onAddManual(name);
+    setDraft("");
+  }
+
   return (
     <div className={styles.container}>
       <div className={styles.listHeader}>
-        <span className={styles.itemCount}>{items.length} items</span>
+        <span className={styles.itemCount}>{items.length + manualItems.length} items</span>
         <button className={styles.rebuildBtn} onClick={onRebuild} disabled={rebuilding}>
           {rebuilding ? "Rebuilding…" : "Rebuild"}
         </button>
       </div>
 
+      <div className={styles.addManualRow}>
+        <input
+          className={styles.addManualInput}
+          type="text"
+          placeholder="Add item…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAddManual(); }}
+        />
+        <button
+          className={styles.addManualBtn}
+          onClick={handleAddManual}
+          disabled={!draft.trim()}
+        >
+          Add
+        </button>
+      </div>
+
       <div className={styles.list}>
+        {manualItems.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.categoryHeader}>My Items</div>
+            {manualItems.map((name) => {
+              const checked = checkedSet.has(`manual:${name}`);
+              return (
+                <div
+                  key={name}
+                  className={`${styles.item} ${checked ? styles.itemChecked : ""}`}
+                  onClick={() => onToggleItem(`manual:${name}`)}
+                >
+                  <div className={styles.itemRow}>
+                    <div className={styles.itemLeft}>
+                      <span className={`${styles.checkbox} ${checked ? styles.checkboxChecked : ""}`}>
+                        {checked && "✓"}
+                      </span>
+                      <span className={styles.itemName}>{name}</span>
+                    </div>
+                    <button
+                      className={styles.removeManualBtn}
+                      onClick={(e) => { e.stopPropagation(); onRemoveManual(name); }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {CATEGORY_ORDER.filter((cat) => byCategory.has(cat)).map((category) => (
           <div
             key={category}

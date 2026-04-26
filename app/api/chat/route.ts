@@ -40,6 +40,7 @@ import { extractBookUpdate, extractMovieUpdate } from "@/lib/anthropic/library";
 import type { ChatCard } from "@/lib/types/cards";
 import type { Book } from "@/lib/books/types";
 import type { Movie } from "@/lib/movies/types";
+import { waitUntil } from "@vercel/functions";
 import { runWebSearch } from "@/lib/search/webSearch";
 import { decideSave } from "@/lib/search/saveDecision";
 import { saveSearchResult } from "@/lib/search/store";
@@ -683,8 +684,7 @@ export async function POST(req: NextRequest) {
       try {
         const result = await runWebSearch(message, profile, recentTurns);
         reply = result.responseText || "I couldn't find anything useful for that search.";
-        // Fire-and-forget: decide whether to save — non-critical, don't block response
-        void (async () => {
+        waitUntil((async () => {
           try {
             const decision = await decideSave(result.query, result.responseText);
             if (decision.shouldSave) {
@@ -697,7 +697,7 @@ export async function POST(req: NextRequest) {
               });
             }
           } catch { /* non-fatal */ }
-        })();
+        })());
       } catch (err) {
         reply = `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
       }
@@ -820,11 +820,11 @@ export async function POST(req: NextRequest) {
     const dateLabel = new Date().toLocaleDateString("en-US", {
       year: "numeric", month: "long", day: "numeric", timeZone: USER_TIMEZONE,
     });
-    void (async () => {
+    waitUntil((async () => {
       try {
         await autoSaveExchange(userId, message, reply!, dateLabel);
       } catch { /* non-fatal */ }
-    })();
+    })());
   }
 
   return NextResponse.json({
