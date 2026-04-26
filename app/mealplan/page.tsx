@@ -12,7 +12,7 @@ import PlanMealsModal from "@/components/PlanMealsModal";
 import SwapMealModal from "@/components/SwapMealModal";
 import AddMealModal from "@/components/AddMealModal";
 import PantryExclusions from "@/components/PantryExclusions";
-import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
+import type { MealPlan, MealType, PlannedMeal } from "@/lib/mealplan/types";
 import type { Recipe } from "@/lib/recipes/types";
 import type { GroceryItem } from "@/lib/mealplan/grocery";
 import styles from "./mealplan.module.css";
@@ -132,12 +132,12 @@ export default function MealPlanPage() {
     setCheckedItems([]);
   }
 
-  async function handleAddMeal(slug: string) {
+  async function handleAddMeal(slug: string, mealType: MealType) {
     if (!token) return;
     const res = await fetch("/api/mealplan", {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ addSlug: slug }),
+      body: JSON.stringify({ addSlug: slug, mealType }),
     });
     const data = await res.json();
     if (data.plan) setPlan(data.plan);
@@ -289,19 +289,31 @@ export default function MealPlanPage() {
                 </div>
               )}
               <div className={styles.mealList}>
-                {plan.meals.map((meal) => (
-                  <MealPlanCard
-                    key={meal.recipeSlug}
-                    meal={meal}
-                    recipe={recipeMap.get(meal.recipeSlug)}
-                    planServings={plan.servings}
-                    onCheckOff={handleCheckOff}
-                    onTapRecipe={(slug) => setSelectedRecipe(recipeMap.get(slug) ?? null)}
-                    onServingsChange={handleServingsChange}
-                    onSwap={(slug) => setSwapMeal(plan.meals.find((m) => m.recipeSlug === slug) ?? null)}
-                    onRemove={handleRemoveMeal}
-                  />
-                ))}
+                {(() => {
+                  const typeOrder: MealType[] = ["breakfast", "lunch", "dinner"];
+                  const groups = typeOrder
+                    .map((type) => ({ type, meals: plan.meals.filter((m) => (m.mealType ?? "dinner") === type) }))
+                    .filter((g) => g.meals.length > 0);
+                  const showHeaders = groups.length > 1;
+                  return groups.map(({ type, meals }) => (
+                    <div key={type}>
+                      {showHeaders && <div className={styles.mealTypeLabel}>{type.charAt(0).toUpperCase() + type.slice(1)}</div>}
+                      {meals.map((meal) => (
+                        <MealPlanCard
+                          key={meal.recipeSlug}
+                          meal={meal}
+                          recipe={recipeMap.get(meal.recipeSlug)}
+                          planServings={plan.servings}
+                          onCheckOff={handleCheckOff}
+                          onTapRecipe={(slug) => setSelectedRecipe(recipeMap.get(slug) ?? null)}
+                          onServingsChange={handleServingsChange}
+                          onSwap={(slug) => setSwapMeal(plan.meals.find((m) => m.recipeSlug === slug) ?? null)}
+                          onRemove={handleRemoveMeal}
+                        />
+                      ))}
+                    </div>
+                  ));
+                })()}
               </div>
             </>
           )

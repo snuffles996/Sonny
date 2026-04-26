@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { getActivePlan, saveActivePlan, clearActivePlan, clearGroceryList } from "@/lib/mealplan/store";
 import { getRecipes, setRecipes } from "@/lib/recipes/store";
-import type { MealPlan, PlannedMeal } from "@/lib/mealplan/types";
+import type { MealPlan, MealType, PlannedMeal } from "@/lib/mealplan/types";
 
 export async function GET(req: NextRequest) {
   const userId = authenticateUser(req);
@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "body required" }, { status: 400 });
 
-  const { slug, made, notes, replacementSlug, servings, removeMealSlug, addSlug } = body as {
+  const { slug, made, notes, replacementSlug, servings, removeMealSlug, addSlug, mealType } = body as {
     slug?: string;
     made?: boolean;
     notes?: string;
@@ -53,6 +53,7 @@ export async function PATCH(req: NextRequest) {
     servings?: number;
     removeMealSlug?: string;
     addSlug?: string;
+    mealType?: MealType;
   };
 
   const plan = await getActivePlan();
@@ -76,7 +77,7 @@ export async function PATCH(req: NextRequest) {
     if (plan.meals.some((m) => m.recipeSlug === addSlug)) {
       return NextResponse.json({ error: "Recipe already in plan" }, { status: 409 });
     }
-    plan.meals.push({ recipeSlug: recipe.slug, recipeName: recipe.name, addedBy: userId, made: false });
+    plan.meals.push({ recipeSlug: recipe.slug, recipeName: recipe.name, addedBy: userId, mealType: mealType ?? "dinner", made: false });
     plan.updatedAt = new Date().toISOString();
     plan.updatedBy = userId;
     await saveActivePlan(plan);

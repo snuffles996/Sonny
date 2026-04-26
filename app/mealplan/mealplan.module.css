@@ -345,3 +345,12 @@
   font-size: 0.82rem;
   color: #ff6b6b;
 }
+
+.mealTypeLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.5rem 0 0.25rem;
+}

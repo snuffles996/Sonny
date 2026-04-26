@@ -2,16 +2,20 @@
 
 import { useState, useMemo } from "react";
 import type { Recipe } from "@/lib/recipes/types";
+import type { MealType } from "@/lib/mealplan/types";
 import styles from "./SwapMealModal.module.css";
+
+const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner"];
 
 interface Props {
   availableRecipes: Recipe[];
-  onAdd: (slug: string) => void;
+  onAdd: (slug: string, mealType: MealType) => void;
   onCancel: () => void;
 }
 
 export default function AddMealModal({ availableRecipes, onAdd, onCancel }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [mealType, setMealType] = useState<MealType>("dinner");
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -24,6 +28,18 @@ export default function AddMealModal({ availableRecipes, onAdd, onCancel }: Prop
     <div className={styles.overlay} onClick={onCancel}>
       <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
         <div className={styles.title}>Add a meal</div>
+
+        <div className={styles.typePicker}>
+          {MEAL_TYPES.map((t) => (
+            <button
+              key={t}
+              className={`${styles.typePill} ${mealType === t ? styles.typeActive : ""}`}
+              onClick={() => setMealType(t)}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
 
         <input
           className={styles.searchInput}
@@ -59,7 +75,7 @@ export default function AddMealModal({ availableRecipes, onAdd, onCancel }: Prop
           <button
             className={styles.confirm}
             disabled={!selected}
-            onClick={() => selected && onAdd(selected)}
+            onClick={() => selected && onAdd(selected, mealType)}
           >
             Add
           </button>

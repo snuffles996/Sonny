@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     recipeSlug: s.recipe.slug,
     recipeName: s.recipe.name,
     addedBy: userId,
+    mealType: "dinner" as const,
     servings,
     made: false,
   }));
