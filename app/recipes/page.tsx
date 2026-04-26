@@ -127,9 +127,10 @@ export default function RecipesPage() {
   }
 
   function openEditForm(recipe: Recipe) {
-    // Parse ## Ingredients / ## Instructions back out of the content markdown
-    const ingrMatch = recipe.content.match(/## Ingredients\n\n([\s\S]*?)(?:\n\n##|$)/);
-    const instrMatch = recipe.content.match(/## Instructions\n\n([\s\S]*?)(?:\n\n##|$)/);
+    // Parse ## Ingredients / ## Instructions back out of the content markdown.
+    // Use \n+ to handle both single and double newlines from URL-extracted recipes.
+    const ingrMatch = recipe.content.match(/##\s*Ingredients\s*\n+([\s\S]*?)(?=\n+##|$)/i);
+    const instrMatch = recipe.content.match(/##\s*Instructions\s*\n+([\s\S]*?)(?=\n+##|$)/i);
     setEditingSlug(recipe.slug);
     setExistingPhotoUrl(recipe.photoUrl ?? null);
     setForm({
@@ -383,9 +384,25 @@ export default function RecipesPage() {
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Photo</label>
                 <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
-                <button className={styles.photoUploadBtn} onClick={() => fileInputRef.current?.click()}>
-                  {photoFile ? photoFile.name : existingPhotoUrl ? "Replace photo…" : "Choose photo…"}
-                </button>
+                <div className={styles.photoRow}>
+                  <button className={styles.photoUploadBtn} onClick={() => fileInputRef.current?.click()}>
+                    {photoFile ? photoFile.name : existingPhotoUrl ? "Replace photo…" : "Choose photo…"}
+                  </button>
+                  {(photoFile || existingPhotoUrl) && (
+                    <button
+                      className={styles.removePhotoBtn}
+                      onClick={() => {
+                        setPhotoFile(null);
+                        setPhotoPreviewUrl(null);
+                        setExistingPhotoUrl(null);
+                        setUploadError(null);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
                 {photoPreviewUrl
                   ? <img src={photoPreviewUrl} alt="new photo preview" className={styles.photoPreview} />
                   : existingPhotoUrl

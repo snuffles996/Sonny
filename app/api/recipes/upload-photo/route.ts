@@ -19,6 +19,11 @@ export async function POST(req: NextRequest) {
   const ext = (file instanceof File ? file.name.split(".").pop() : null) ?? "jpg";
   const filename = `recipes/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
 
-  const blob = await put(filename, file, { access: "public" });
-  return NextResponse.json({ url: blob.url });
+  try {
+    const blob = await put(filename, file, { access: "public" });
+    return NextResponse.json({ url: blob.url });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

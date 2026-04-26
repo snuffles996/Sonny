@@ -458,6 +458,28 @@
   color: #3a3a3a;
 }
 
+.photoRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.removePhotoBtn {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #666;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.removePhotoBtn:hover {
+  color: #aaa;
+}
+
 .photoUploadBtn {
   background: #1a1a1a;
   border: 1px dashed #2a2a2a;
