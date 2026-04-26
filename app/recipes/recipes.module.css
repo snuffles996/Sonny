@@ -180,6 +180,16 @@
   flex-shrink: 0;
 }
 
+.editRecipeBtn {
+  background: none;
+  border: 1px solid #2a2a2a;
+  color: #aaa;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 .removeRecipeBtn {
   background: none;
   border: 1px solid #3a1a1a;

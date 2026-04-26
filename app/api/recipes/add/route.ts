@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as {
     url?: string;
     recipe?: {
+      slug?: string;
       name: string;
       content: string;
       cuisine: string;
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
     if (!name?.trim() || !content?.trim() || !cuisine?.trim()) {
       return NextResponse.json({ error: "name, content, and cuisine are required" }, { status: 400 });
     }
-    const slug = slugify(name);
+    const slug = (body.recipe as { slug?: string }).slug?.trim() || slugify(name);
     const recipe: Recipe = {
       slug,
       name: name.trim(),

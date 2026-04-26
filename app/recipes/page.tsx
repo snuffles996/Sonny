@@ -39,8 +39,10 @@ export default function RecipesPage() {
   const [removing, setRemoving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
-  // Manual entry form
+  // Manual entry / edit form
   const [showForm, setShowForm] = useState(false);
+  const [editingSlug, setEditingSlug] = useState<string | null>(null); // null = new recipe
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
   const [form, setForm] = useState<RecipeForm>(EMPTY_FORM);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
@@ -111,9 +113,44 @@ export default function RecipesPage() {
     if (!file) return;
     setPhotoFile(file);
     setPhotoPreviewUrl(URL.createObjectURL(file));
+    setUploadError(null);
+  }
+
+  function openNewForm() {
+    setEditingSlug(null);
+    setExistingPhotoUrl(null);
+    setForm(EMPTY_FORM);
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setUploadError(null);
+    setShowForm(true);
+  }
+
+  function openEditForm(recipe: Recipe) {
+    // Parse ## Ingredients / ## Instructions back out of the content markdown
+    const ingrMatch = recipe.content.match(/## Ingredients\n\n([\s\S]*?)(?:\n\n##|$)/);
+    const instrMatch = recipe.content.match(/## Instructions\n\n([\s\S]*?)(?:\n\n##|$)/);
+    setEditingSlug(recipe.slug);
+    setExistingPhotoUrl(recipe.photoUrl ?? null);
+    setForm({
+      name: recipe.name,
+      cuisine: recipe.cuisine,
+      source: recipe.source === "manual" ? "" : recipe.source,
+      servings: recipe.servings != null ? String(recipe.servings) : "",
+      totalTime: recipe.totalTime ?? "",
+      notes: recipe.notes ?? "",
+      ingredients: ingrMatch?.[1]?.trim() ?? "",
+      instructions: instrMatch?.[1]?.trim() ?? "",
+    });
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setUploadError(null);
+    setShowForm(true);
   }
 
   function resetForm() {
+    setEditingSlug(null);
+    setExistingPhotoUrl(null);
     setForm(EMPTY_FORM);
     setPhotoFile(null);
     setPhotoPreviewUrl(null);
@@ -125,10 +162,11 @@ export default function RecipesPage() {
     if (!token || !form.name.trim() || !form.cuisine.trim()) return;
     if (!form.ingredients.trim() && !form.instructions.trim()) return;
     setSaving(true);
-
     setUploadError(null);
+
     try {
-      let photoUrl: string | undefined;
+      // Determine the final photo URL: new upload > existing > none
+      let photoUrl: string | undefined = existingPhotoUrl ?? undefined;
 
       if (photoFile) {
         const fd = new FormData();
@@ -143,7 +181,8 @@ export default function RecipesPage() {
           photoUrl = uploadData.url;
         } else {
           const errData = await uploadRes.json().catch(() => ({}));
-          setUploadError(errData.error ?? "Photo upload failed — recipe will be saved without it.");
+          setUploadError(errData.error ?? "Photo upload failed. Fix the issue or remove the photo and try again.");
+          return; // Stop — don't save without the photo the user explicitly attached
         }
       }
 
@@ -152,11 +191,15 @@ export default function RecipesPage() {
         form.instructions.trim() ? `## Instructions\n\n${form.instructions.trim()}` : "",
       ].filter(Boolean).join("\n\n");
 
+      // Derive slug: keep existing slug when editing, generate new one otherwise
+      const slug = editingSlug ?? form.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
       const res = await fetch("/api/recipes/add", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           recipe: {
+            slug,
             name: form.name.trim(),
             cuisine: form.cuisine.trim(),
             source: form.source.trim() || "manual",
@@ -176,6 +219,8 @@ export default function RecipesPage() {
           if (idx >= 0) { const next = [...prev]; next[idx] = data.recipe; return next; }
           return [...prev, data.recipe];
         });
+        // If editing the currently selected recipe, update it in the detail sheet too
+        if (editingSlug) setSelected(data.recipe);
         resetForm();
       }
     } finally {
@@ -197,7 +242,7 @@ export default function RecipesPage() {
       <div className={styles.header}>
         <div className={styles.titleRow}>
           <h1 className={styles.title}>All Meals</h1>
-          <button className={styles.addRecipeBtn} onClick={() => setShowForm(true)}>+ Add recipe</button>
+          <button className={styles.addRecipeBtn} onClick={openNewForm}>+ Add recipe</button>
         </div>
         <input
           className={styles.search}
@@ -253,7 +298,10 @@ export default function RecipesPage() {
                     <button className={styles.cancelRemoveBtn} onClick={() => setConfirmRemove(false)}>Cancel</button>
                   </>
                 ) : (
-                  <button className={styles.removeRecipeBtn} onClick={() => setConfirmRemove(true)}>Remove</button>
+                  <>
+                    <button className={styles.editRecipeBtn} onClick={() => { setConfirmRemove(false); openEditForm(selected); }}>Edit</button>
+                    <button className={styles.removeRecipeBtn} onClick={() => setConfirmRemove(true)}>Remove</button>
+                  </>
                 )}
                 <button className={styles.closeBtn} onClick={() => { setSelected(null); setConfirmRemove(false); }}>✕</button>
               </div>
@@ -285,7 +333,7 @@ export default function RecipesPage() {
         <div className={styles.formOverlay} onClick={resetForm}>
           <div className={styles.formSheet} onClick={(e) => e.stopPropagation()}>
             <div className={styles.formHeader}>
-              <span className={styles.formTitle}>Add recipe</span>
+              <span className={styles.formTitle}>{editingSlug ? "Edit recipe" : "Add recipe"}</span>
               <button className={styles.closeBtn} onClick={resetForm}>✕</button>
             </div>
 
@@ -336,9 +384,13 @@ export default function RecipesPage() {
                 <label className={styles.formLabel}>Photo</label>
                 <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
                 <button className={styles.photoUploadBtn} onClick={() => fileInputRef.current?.click()}>
-                  {photoFile ? photoFile.name : "Choose photo…"}
+                  {photoFile ? photoFile.name : existingPhotoUrl ? "Replace photo…" : "Choose photo…"}
                 </button>
-                {photoPreviewUrl && <img src={photoPreviewUrl} alt="preview" className={styles.photoPreview} />}
+                {photoPreviewUrl
+                  ? <img src={photoPreviewUrl} alt="new photo preview" className={styles.photoPreview} />
+                  : existingPhotoUrl
+                  ? <img src={existingPhotoUrl} alt="existing photo" className={styles.photoPreview} />
+                  : null}
               </div>
             </div>
 
