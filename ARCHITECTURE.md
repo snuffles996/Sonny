@@ -281,7 +281,9 @@ General-purpose named lists per user. Key: `list:{userId}:{listName}`.
 
 Stored as `Recipe[]` in Redis (`data:recipes`) — full array, full-replace. `extract.ts` — Haiku extracts structured recipe from URL: title, `## Ingredients` + `## Instructions` markdown, totalTime, servings, cuisine, tags.
 
-API: `GET /api/recipes` (list all), `DELETE /api/recipes?slug=` (remove one). `store.ts` exports `removeRecipe(slug)`.
+`Recipe` fields include `mealType?: RecipeMealType` (`"breakfast" | "lunch" | "dinner"`, defaults to `"dinner"` when absent). All existing recipes without the field are treated as dinner at read time.
+
+API: `GET /api/recipes` (list all), `DELETE /api/recipes?slug=` (remove one). `store.ts` exports `removeRecipe(slug)`. `/api/recipes/add` accepts `mealType` in the recipe body.
 
 ### Profile — `lib/profile/`
 
@@ -312,8 +314,9 @@ Per-user daily log (`skinlog:{userId}`) — topical products, symptoms, skin con
 - Settings page: `/settings` (`app/settings/`) — profile editor backed by `GET/PATCH /api/profile`
 - Chat cards: `components/BookCard.tsx`, `components/MovieCard.tsx` — rendered in chat when API returns `cards[]`
 - **Recipes page** (`/recipes`): recipe detail sheet has a **Remove** button → `DELETE /api/recipes?slug=`
-- **Meal plan page** (`/mealplan`): each `MealPlanCard` has a × remove button → `PATCH /api/mealplan { removeMealSlug }`. Header has **+ Add meal** → `AddMealModal` (searchable recipe picker, lists non-planned recipes) → `PATCH /api/mealplan { addSlug }`. `PlanMealsModal` renamed to "New plan" to distinguish from add-single-meal flow.
-- **`components/AddMealModal.tsx`** — reuses SwapMealModal styles; picks a single recipe to append to the current plan
+- **Meal plan page** (`/mealplan`): each `MealPlanCard` has a × remove button → `PATCH /api/mealplan { removeMealSlug }`. Header has **+ Add meal** → `AddMealModal` → `PATCH /api/mealplan { addSlug, mealType }`. `PlanMealsModal` renamed to "New plan" to distinguish from add-single-meal flow.
+- **`components/AddMealModal.tsx`** — Breakfast/Lunch/Dinner type picker (defaults to Dinner). Filters available recipes by `recipe.mealType ?? "dinner"`. Passes `mealType` through to the PATCH. Auto-generated plans stamp all meals `mealType: "dinner"`. The meal list groups by type (Breakfast → Lunch → Dinner) with section headers when multiple types are present.
+- **Recipe form** (`/recipes` Add/Edit sheet) — Breakfast/Lunch/Dinner picker sets `recipe.mealType`. Defaults to Dinner for all new entries.
 - Skin Log page (`/skinlog`) remains functional but is no longer in bottom nav
 
 ---
@@ -429,7 +432,7 @@ After changing the tool list, users must re-sync the connector in claude.ai to p
 ### Features
 
 - **Weekly briefing cron** — stub at `app/api/cron/route.ts`; send meal plan + calendar summary Monday 8am to Kevin and Kylie.
-- **`PlannedMeal.mealType`** — extend to support breakfast/lunch/dinner type in meal planning.
+- ~~**`PlannedMeal.mealType`**~~ — Resolved: `PlannedMeal` has `mealType?: MealType`; `Recipe` has `mealType?: RecipeMealType`. Auto-generated meals are stamped `"dinner"`. AddMealModal filters recipes by type. Meal list groups by type with section headers. Legacy data without the field defaults to `"dinner"` at render time.
 - **Kylie's Audible** — `audible_library` intent now searches `library:{userId}:books` automatically per-user. Kylie needs her own Audible export + sync run (`AUDIBLE_USER_ID=kylie node scripts/sync-audible.mjs kylie-library.json`).
 - ~~**Book cover fallback quality**~~ — Already implemented: `searchBooks()` returns `coverUrl` from `info.imageLinks.thumbnail`; all handlers use `top.coverUrl ?? openlibrary` (Google Books primary, Open Library fallback by ISBN). TMDb poster coverage for movies/TV is near-complete, no fallback needed.
 - ~~**Recipe from photo**~~ — Implemented: `Recipe` type now has `photoUrl?: string`. `/api/recipes/add` accepts `{ url }` OR `{ recipe: { name, content, cuisine, ... } }`. `/api/recipes/upload-photo` uploads to Vercel Blob and returns a public URL. `sonny_add_recipe` MCP tool accepts either URL or structured fields. Recipe detail sheets display the photo when present. Workflow: user sends photo to claude.ai → Claude extracts data → calls `sonny_add_recipe` with structured fields + optional `photoUrl`.
