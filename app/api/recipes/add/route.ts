@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       servings?: number;
       totalTime?: string;
       photoUrl?: string;
-      mealType?: "breakfast" | "lunch" | "dinner";
+      mealType?: "breakfast" | "lunch" | "dinner" | "snack" | "dessert";
       notes?: string;
     };
   } | null;

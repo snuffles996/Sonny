@@ -350,7 +350,7 @@ export default function RecipesPage() {
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Meal type</label>
                 <div className={styles.mealTypePicker}>
-                  {(["breakfast", "lunch", "dinner"] as RecipeMealType[]).map((t) => (
+                  {(["breakfast", "lunch", "dinner", "snack", "dessert"] as RecipeMealType[]).map((t) => (
                     <button
                       key={t}
                       type="button"

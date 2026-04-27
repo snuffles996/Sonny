@@ -290,7 +290,7 @@ export default function MealPlanPage() {
               )}
               <div className={styles.mealList}>
                 {(() => {
-                  const typeOrder: MealType[] = ["breakfast", "lunch", "dinner"];
+                  const typeOrder: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
                   const groups = typeOrder
                     .map((type) => ({ type, meals: plan.meals.filter((m) => (m.mealType ?? "dinner") === type) }))
                     .filter((g) => g.meals.length > 0);

@@ -5,7 +5,7 @@ import type { Recipe } from "@/lib/recipes/types";
 import type { MealType } from "@/lib/mealplan/types";
 import styles from "./SwapMealModal.module.css";
 
-const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner"];
+const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
 
 interface Props {
   availableRecipes: Recipe[];

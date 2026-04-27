@@ -1,6 +1,6 @@
 import type { UserId } from "@/lib/profile/types";
 
-export type MealType = "breakfast" | "lunch" | "dinner";
+export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "dessert";
 
 export interface PlannedMeal {
   recipeSlug: string;

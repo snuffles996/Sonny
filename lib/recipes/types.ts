@@ -1,4 +1,4 @@
-export type RecipeMealType = "breakfast" | "lunch" | "dinner";
+export type RecipeMealType = "breakfast" | "lunch" | "dinner" | "snack" | "dessert";
 
 export interface Recipe {
   slug: string;
