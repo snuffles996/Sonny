@@ -281,7 +281,7 @@ General-purpose named lists per user. Key: `list:{userId}:{listName}`.
 
 Stored as `Recipe[]` in Redis (`data:recipes`) — full array, full-replace. `extract.ts` — Haiku extracts structured recipe from URL: title, `## Ingredients` + `## Instructions` markdown, totalTime, servings, cuisine, tags.
 
-`Recipe` fields include `mealType?: RecipeMealType` (`"breakfast" | "lunch" | "dinner"`, defaults to `"dinner"` when absent). All existing recipes without the field are treated as dinner at read time.
+`Recipe` fields include `mealType?: RecipeMealType` (`"breakfast" | "lunch" | "dinner" | "snack" | "dessert"`, defaults to `"dinner"` when absent). All existing recipes without the field are treated as dinner at read time.
 
 API: `GET /api/recipes` (list all), `DELETE /api/recipes?slug=` (remove one). `store.ts` exports `removeRecipe(slug)`. `/api/recipes/add` accepts `mealType` in the recipe body.
 
@@ -432,7 +432,7 @@ After changing the tool list, users must re-sync the connector in claude.ai to p
 ### Features
 
 - **Weekly briefing cron** — stub at `app/api/cron/route.ts`; send meal plan + calendar summary Monday 8am to Kevin and Kylie.
-- ~~**`PlannedMeal.mealType`**~~ — Resolved: `PlannedMeal` has `mealType?: MealType`; `Recipe` has `mealType?: RecipeMealType`. Auto-generated meals are stamped `"dinner"`. AddMealModal filters recipes by type. Meal list groups by type with section headers. Legacy data without the field defaults to `"dinner"` at render time.
+- ~~**`PlannedMeal.mealType`**~~ — Resolved: `PlannedMeal` has `mealType?: MealType`; `Recipe` has `mealType?: RecipeMealType`. Types: `breakfast | lunch | dinner | snack | dessert`. Auto-generated meals are stamped `"dinner"`. AddMealModal filters recipes by type. Meal list groups by type with section headers (Breakfast → Lunch → Dinner → Snack → Dessert). Legacy data without the field defaults to `"dinner"` at render time.
 - **Kylie's Audible** — `audible_library` intent now searches `library:{userId}:books` automatically per-user. Kylie needs her own Audible export + sync run (`AUDIBLE_USER_ID=kylie node scripts/sync-audible.mjs kylie-library.json`).
 - ~~**Book cover fallback quality**~~ — Already implemented: `searchBooks()` returns `coverUrl` from `info.imageLinks.thumbnail`; all handlers use `top.coverUrl ?? openlibrary` (Google Books primary, Open Library fallback by ISBN). TMDb poster coverage for movies/TV is near-complete, no fallback needed.
 - ~~**Recipe from photo**~~ — Implemented: `Recipe` type now has `photoUrl?: string`. `/api/recipes/add` accepts `{ url }` OR `{ recipe: { name, content, cuisine, ... } }`. `/api/recipes/upload-photo` uploads to Vercel Blob and returns a public URL. `sonny_add_recipe` MCP tool accepts either URL or structured fields. Recipe detail sheets display the photo when present. Workflow: user sends photo to claude.ai → Claude extracts data → calls `sonny_add_recipe` with structured fields + optional `photoUrl`.
