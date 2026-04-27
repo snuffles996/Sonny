@@ -57,7 +57,8 @@ const TOOLS: Tool[] = [
   { name: "sonny_get_grocery_list", description: "Return the grocery list for the active meal plan, grouped by category. Builds and caches automatically.", inputSchema: { type: "object", properties: {} } },
 
   // Recipes
-  { name: "sonny_add_recipe", description: "Save a recipe to the library. Provide either a URL (Haiku extracts it automatically) or structured fields for manual/photo entry. For photo imports, extract all fields from the image first, then call this tool with the structured data.", inputSchema: { type: "object", properties: { url: { type: "string", description: "Full URL of the recipe page (use this OR the structured fields below)" }, name: { type: "string", description: "Recipe name (for manual/photo entry)" }, content: { type: "string", description: "Full recipe in markdown with ## Ingredients and ## Instructions sections" }, cuisine: { type: "string", description: "Cuisine type, e.g. Italian, Mexican, American" }, source: { type: "string", description: "Source label, e.g. 'photo', 'handwritten', 'cookbook'. Defaults to 'manual'" }, servings: { type: "number" }, totalTime: { type: "string", description: "e.g. '45 minutes'" }, photoUrl: { type: "string", description: "Vercel Blob URL of the uploaded recipe photo (from /api/recipes/upload-photo)" }, notes: { type: "string" } } } },
+  { name: "sonny_add_recipe", description: "Save a new recipe to the library. Provide either a URL (Haiku extracts it automatically) or structured fields. Note: photo upload requires the web app — MCP cannot upload binary files. If a photo was already uploaded via the web app, pass its proxy URL as photoUrl.", inputSchema: { type: "object", properties: { url: { type: "string", description: "Full URL of the recipe page (use this OR the structured fields below)" }, name: { type: "string", description: "Recipe name (for manual/photo entry)" }, content: { type: "string", description: "Full recipe in markdown with ## Ingredients and ## Instructions sections" }, cuisine: { type: "string", description: "Cuisine type, e.g. Italian, Mexican, American" }, source: { type: "string", description: "Source label, e.g. 'photo', 'handwritten', 'cookbook'. Defaults to 'manual'" }, mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack", "dessert"], description: "Meal type (default: dinner)" }, servings: { type: "number" }, totalTime: { type: "string", description: "e.g. '45 minutes'" }, photoUrl: { type: "string", description: "Proxy URL of an already-uploaded photo (from the web app upload flow)" }, notes: { type: "string" } } } },
+  { name: "sonny_update_recipe", description: "Edit an existing recipe by slug. Only the fields you provide are changed — omitted fields keep their current values. Use sonny_list_recipes to find the slug. Note: photo upload requires the web app.", inputSchema: { type: "object", properties: { slug: { type: "string", description: "Recipe slug (exact, from sonny_list_recipes)" }, name: { type: "string" }, content: { type: "string", description: "Full recipe markdown with ## Ingredients and ## Instructions" }, cuisine: { type: "string" }, source: { type: "string" }, mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack", "dessert"] }, servings: { type: "number" }, totalTime: { type: "string" }, photoUrl: { type: "string", description: "Proxy URL of an already-uploaded photo" }, notes: { type: "string" } }, required: ["slug"] } },
   { name: "sonny_list_recipes", description: "Return all recipes in the library.", inputSchema: { type: "object", properties: {} } },
 
   // Calendar
@@ -210,6 +211,7 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
         cuisine,
         source: (args.source as string | undefined)?.trim() || "manual",
         content,
+        mealType: (args.mealType as RecipeType["mealType"] | undefined) ?? "dinner",
         addedDate: new Date().toISOString().slice(0, 10),
         ...(args.servings != null ? { servings: args.servings as number } : {}),
         ...(args.totalTime ? { totalTime: (args.totalTime as string).trim() } : {}),
@@ -218,6 +220,27 @@ async function callTool(name: string, args: A, userId: UserId): Promise<unknown>
       };
       await addRecipe(recipe);
       return { recipe, saved: true };
+    }
+    case "sonny_update_recipe": {
+      const slug = (args.slug as string | undefined)?.trim();
+      if (!slug) return { error: "slug is required" };
+      const recipes = await getRecipes();
+      const existing = recipes.find((r) => r.slug === slug);
+      if (!existing) return { error: `No recipe found with slug "${slug}"` };
+      const updated: RecipeType = {
+        ...existing,
+        ...(args.name ? { name: (args.name as string).trim() } : {}),
+        ...(args.content ? { content: (args.content as string).trim() } : {}),
+        ...(args.cuisine ? { cuisine: (args.cuisine as string).trim() } : {}),
+        ...(args.source ? { source: (args.source as string).trim() } : {}),
+        ...(args.mealType ? { mealType: args.mealType as RecipeType["mealType"] } : {}),
+        ...(args.servings != null ? { servings: args.servings as number } : {}),
+        ...(args.totalTime ? { totalTime: (args.totalTime as string).trim() } : {}),
+        ...(args.photoUrl ? { photoUrl: args.photoUrl as string } : {}),
+        ...(args.notes ? { notes: (args.notes as string).trim() } : {}),
+      };
+      await addRecipe(updated);
+      return { recipe: updated, saved: true };
     }
     case "sonny_list_recipes":
       return { recipes: await getRecipes() };
