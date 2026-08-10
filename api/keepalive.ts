@@ -1,9 +1,9 @@
+import type { NextApiRequest, NextApiResponse } from 'next';
 import { Redis } from '@upstash/redis';
 
-const redis = Redis.fromEnv(); // uses UPSTASH_REDIS_REST_URL / TOKEN env vars already in your Vercel project
+const redis = Redis.fromEnv();
 
-export default async function handler(req, res) {
-  // simple auth so randoms can't hit this
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.headers['authorization'] !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).end();
   }
